@@ -1,0 +1,18 @@
+{
+  "id": "camera",
+  "name": "Camera",
+  "version": "0.1.0",
+  "description": "Live camera preview NativeView with photo capture and facing-mode switch. Pairs with the SDK's CameraView() wrapper.",
+  "provides": { "views": ["camera"], "services": [] },
+  "js": null,
+  "ios": {
+    "sources": "ios",
+    "module": "LeCodesCamera",
+    "register": "LeCodesCameraPlugin",
+    "minSdk": "1.0.2",
+    "infoPlist": {
+      "NSCameraUsageDescription": "The app uses the camera to take photos."
+    }
+  },
+  "android": null
+}

@@ -1,0 +1,18 @@
+{
+  "id": "geolocation",
+  "name": "Geolocation",
+  "version": "0.1.0",
+  "description": "Device position service over CoreLocation. Pairs with the SDK's Geolocation wrapper.",
+  "provides": { "views": [], "services": ["geolocation"] },
+  "js": null,
+  "ios": {
+    "sources": "ios",
+    "module": "LeCodesGeolocation",
+    "register": "LeCodesGeolocationPlugin",
+    "minSdk": "1.5.0",
+    "infoPlist": {
+      "NSLocationWhenInUseUsageDescription": "The app uses your location to show position-aware content."
+    }
+  },
+  "android": null
+}
