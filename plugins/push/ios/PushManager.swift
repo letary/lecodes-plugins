@@ -193,6 +193,11 @@ public final class PushManager: LeCodesNotificationHandler {
         var body: [String: Any] = [
             "projectUuid": uuid, "platform": "apns", "token": token, "environment": environment,
         ]
+        // The relay picks send credentials — and the apns-topic — from the host app's bundle
+        // id. A standalone shell MUST send its own: registered under the viewer's topic its
+        // sends would die with DeviceTokenNotForTopic. The relay also fail-fasts registration
+        // for bundle ids it can never sign for (foreign teams, until per-app keys exist).
+        if let hostApp = Bundle.main.bundleIdentifier { body["hostApp"] = hostApp }
         if let user { body["user"] = user }
         var request = URLRequest(url: URL(string: "\(apiBase)/api/push/registrations")!)
         request.httpMethod = "POST"

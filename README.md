@@ -83,10 +83,14 @@ A plugin cannot implement `UIApplicationDelegate` callbacks. The SDK (≥ 1.5.0)
 in scene connect); the generated shell templates include those lines, and the plugin
 attaches its handler at `register(in:)` time. Buffering makes the ordering safe either way.
 
-**Push delivery caveat:** the le.codes relay signs sends with the le.codes APNs key, which
-can only reach the LeCodes launcher family's bundle ids. In a generated shell (own bundle
-id, no world identity) `register()` rejects `"unavailable"` — honest, until the backend
-supports per-app APNs keys. That's also why the CLI doesn't merge `entitlements` yet.
+**Push delivery scope:** an APNs auth key is team-scoped, so the le.codes relay signs sends
+for EVERY Letary-published bundle id (`com.letary.*` — the viewer and shells Letary itself
+ships): the plugin sends the shell's bundle id as `hostApp`, the relay picks the
+`apns-topic` from it, and `lecodes app sync` merges the `aps-environment` entitlement and
+bakes the project uuid as world identity (SDK ≥ 1.6.0). Bundle ids outside that namespace —
+third-party Apple teams — reject at *registration* (`no_send_credentials` → the JS
+`register()` rejects `"unavailable"`), honest and immediate, until the backend grows
+per-project uploaded APNs keys.
 
 ## JS side
 

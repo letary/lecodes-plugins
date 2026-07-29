@@ -1,9 +1,14 @@
 {
   "id": "push",
   "name": "Push Notifications",
-  "version": "1.0.0",
-  "description": "Remote notifications service: APNs token, permission prompt, le.codes relay registration, tap/foreground routing. Pairs with the SDK's Push wrapper. Delivery currently reaches the LeCodes launcher family only (the relay signs with the le.codes APNs key).",
-  "provides": { "views": [], "services": ["push"] },
+  "version": "1.1.0",
+  "description": "Remote notifications service: APNs token, permission prompt, le.codes relay registration, tap/foreground routing. Pairs with the SDK's Push wrapper. The relay signs sends with the shared team key for Letary-published bundle ids (viewer + com.letary.* shells with a baked world identity, SDK 1.6.0+); other bundle ids reject at registration until per-app uploaded keys land.",
+  "provides": {
+    "views": [],
+    "services": [
+      "push"
+    ]
+  },
   "js": null,
   "ios": {
     "sources": "ios",
