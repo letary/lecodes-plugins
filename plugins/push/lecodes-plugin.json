@@ -1,8 +1,8 @@
 {
   "id": "push",
   "name": "Push Notifications",
-  "version": "1.1.0",
-  "description": "Remote notifications service: APNs token, permission prompt, le.codes relay registration, tap/foreground routing. Pairs with the SDK's Push wrapper. The relay signs sends with the shared team key for Letary-published bundle ids (viewer + com.letary.* shells with a baked world identity, SDK 1.6.0+); other bundle ids reject at registration until per-app uploaded keys land.",
+  "version": "1.2.0",
+  "description": "Remote notifications service: APNs (iOS) / FCM (Android) token, permission prompt, le.codes relay registration, tap/foreground routing. Pairs with the SDK's Push wrapper. Delivery is scoped to Letary-published apps (iOS: com.letary.* bundle ids under the team APNs key; Android: packages registered in the le.codes Firebase project via google-services.json); others reject at registration until per-project uploaded keys land.",
   "provides": {
     "views": [],
     "services": [
@@ -19,5 +19,15 @@
       "aps-environment": "development"
     }
   },
-  "android": null
+  "android": {
+    "sources": "android",
+    "module": "lecodes-push",
+    "register": "io.letary.lecodes.plugins.push.PushPlugin",
+    "minSdk": "1.1.0",
+    "dependencies": [
+      "platform:com.google.firebase:firebase-bom:34.16.0",
+      "com.google.firebase:firebase-messaging"
+    ],
+    "gradlePlugins": ["com.google.gms.google-services"]
+  }
 }

@@ -1,7 +1,7 @@
 {
   "id": "qr-scanner",
   "name": "QR Scanner",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Camera QR-code scanner NativeView emitting scan events. Pairs with the SDK's QRScanner() wrapper.",
   "provides": { "views": ["qrScanner"], "services": [] },
   "js": null,
@@ -14,5 +14,10 @@
       "NSCameraUsageDescription": "The app uses the camera to scan QR codes."
     }
   },
-  "android": null
+  "android": {
+    "sources": "android",
+    "module": "lecodes-qr-scanner",
+    "register": "io.letary.lecodes.plugins.qrscanner.QRScannerPlugin",
+    "minSdk": "1.1.0"
+  }
 }

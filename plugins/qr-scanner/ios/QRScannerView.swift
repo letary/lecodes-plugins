@@ -1,8 +1,8 @@
 //
-//  QRScannerView.swift
-//  App
+//  QRScannerView.swift — lecodes-plugins/qr-scanner
 //
-//  Created by Denis Hohryakov on 2026.01.20.
+//  AVFoundation QR scanner view: metadata-output detection with an aspect-fill preview.
+//  onData fires on every payload change (null when the code leaves the frame).
 //
 
 import UIKit
@@ -116,7 +116,7 @@ class QRScannerView: UIView, AVCaptureMetadataOutputObjectsDelegate {
     }
 
     
-    /// Запуск сканирования
+    /// Start the capture session (off-main — startRunning blocks)
     func startScanning() {
         guard let session = captureSession, !session.isRunning else { return }
         DispatchQueue.global(qos: .userInitiated).async {

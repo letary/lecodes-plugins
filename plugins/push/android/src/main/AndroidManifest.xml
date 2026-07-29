@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Merged into the consuming app by the AGP manifest merger. -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <!-- FCM: on Android 13+ notifications are not shown at all without this. -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+    <!-- The plugin does not use the advertising ID. These would arrive transitively with
+         Firebase analytics; removed here in case a dependency pulls them back in — otherwise
+         Play requires the Advertising ID declaration to be filled in. (tools:node="remove"
+         strips them from lower-priority manifests — this module is a direct dependency of the
+         app, so it outranks the transitive play-services manifests.) -->
+    <uses-permission android:name="com.google.android.gms.permission.AD_ID" tools:node="remove" />
+    <uses-permission android:name="android.permission.ACCESS_ADSERVICES_AD_ID" tools:node="remove" />
+    <uses-permission android:name="android.permission.ACCESS_ADSERVICES_ATTRIBUTION" tools:node="remove" />
+
+    <application>
+        <!-- FCM entry point (docs/push-plan.md). Data-only messages — the service renders
+             the notification itself on a per-project channel (native per-app mute). -->
+        <service
+            android:name="io.letary.lecodes.plugins.push.LePushMessagingService"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.google.firebase.MESSAGING_EVENT" />
+            </intent-filter>
+        </service>
+    </application>
+
+</manifest>
