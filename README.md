@@ -36,7 +36,7 @@ Why vendoring, deliberately:
   with any app built on the other. Vendored targets inherit whichever variant the app chose.
 - **Android needs no Maven.** The same repo carries Kotlin sources; the Android shell compiles
   them as a local Gradle module. Nothing to publish to Maven/JitPack.
-- **One versioning story.** Repo-wide semver tags (`v0.1.0`); the lockfile records tag + commit.
+- **One versioning story.** Repo-wide semver tags (`v1.0.0`); the lockfile records tag + commit.
 
 The root `Package.swift` here is a **dev manifest only** — it exists so plugin authors can open
 this repo in Xcode and build/test the iOS sources against the published SDK. Apps never
@@ -52,7 +52,7 @@ xcodebuild -scheme lecodes-plugins-Package -destination 'generic/platform=iOS Si
 {
   "id": "camera",                     // catalog id, kebab-case, globally unique
   "name": "Camera",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "provides": { "views": ["camera"], "services": [] },  // channel names registered
   "js": null,                         // first-party JS wrappers live in the SDK;
                                       // third-party plugins point at a library slug here

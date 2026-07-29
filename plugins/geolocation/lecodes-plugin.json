@@ -1,7 +1,7 @@
 {
   "id": "geolocation",
   "name": "Geolocation",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "Device position service over CoreLocation. Pairs with the SDK's Geolocation wrapper.",
   "provides": { "views": [], "services": ["geolocation"] },
   "js": null,

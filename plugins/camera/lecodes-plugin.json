@@ -1,7 +1,7 @@
 {
   "id": "camera",
   "name": "Camera",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "Live camera preview NativeView with photo capture and facing-mode switch. Pairs with the SDK's CameraView() wrapper.",
   "provides": { "views": ["camera"], "services": [] },
   "js": null,

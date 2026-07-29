@@ -1,7 +1,7 @@
 {
   "id": "push",
   "name": "Push Notifications",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "Remote notifications service: APNs token, permission prompt, le.codes relay registration, tap/foreground routing. Pairs with the SDK's Push wrapper. Delivery currently reaches the LeCodes launcher family only (the relay signs with the le.codes APNs key).",
   "provides": { "views": [], "services": ["push"] },
   "js": null,
