@@ -1,7 +1,7 @@
 {
   "id": "push",
   "name": "Push Notifications",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "description": "Remote notifications service: APNs (iOS) / FCM (Android) token, permission prompt, le.codes relay registration, tap/foreground routing. Pairs with the SDK's Push wrapper. Delivery is scoped to Letary-published apps (iOS: com.letary.* bundle ids under the team APNs key; Android: packages registered in the le.codes Firebase project via google-services.json); others reject at registration until per-project uploaded keys land.",
   "provides": {
     "views": [],
