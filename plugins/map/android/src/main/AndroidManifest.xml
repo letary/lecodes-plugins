@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Merged into the consuming app by the AGP manifest merger. The map fetches its style, tiles,
+     sprites and glyphs itself — that is the only permission it needs. No location permission:
+     the user puck is fed by the app (the geolocation plugin), MapLibre's location component is
+     never activated. -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <uses-permission android:name="android.permission.INTERNET" />
+</manifest>

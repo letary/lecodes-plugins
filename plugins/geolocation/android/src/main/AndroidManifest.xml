@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Merged into the consuming app by the AGP manifest merger. FINE + COARSE together so the
+     system dialog can offer "approximate" — the service accepts either grant. Carrying these
+     permissions is exactly why geolocation is a plugin and not part of the SDK: a location
+     permission in the merged manifest triggers Play data-safety declarations for every app. -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <uses-feature android:name="android.hardware.location" android:required="false" />
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+</manifest>

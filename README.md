@@ -2,8 +2,8 @@
 
 First-party native plugins of LeCodes apps, for the 2.x SDK: iOS, Android and the web.
 
-> **Status: in progress.** The contracts, the app's side (`sdk/`) and the iOS halves (`ios/`) are
-> here; `android/` and `web/` are not yet. The 1.x plugins live in
+> **Status: in progress.** The contracts, the app's side (`sdk/`) and the native halves (`ios/`,
+> `android/`) are here; `web/` is not yet. The 1.x plugins live in
 > [lecodes-plugins-legacy](https://github.com/letary/lecodes-plugins-legacy).
 
 Desktop plugins are a separate system (a prebuilt library behind a C ABI) and are not part of this
@@ -30,11 +30,13 @@ plugins/<id>/
   contract.d.ts           the contract of the channel — the source of truth
   sdk/                    → the app's bundle: the wrapper the app calls (TypeScript source)
   ios/                    → the iOS shell (Swift)
-  android/                → the Android shell (Kotlin)
+  android/                → the Android shell (Kotlin), laid out as a Gradle module:
+                            src/main/AndroidManifest.xml, src/main/java/<package>/, src/main/res/, libs/
   web/                    → the web host (TypeScript)
 ```
 
-Generated files sit beside the hand-written ones and end in `.gen.*`. They are committed:
+Generated files sit beside the hand-written ones and end in `.gen.*` (on Android: in the folder of
+the plugin's Kotlin package). They are committed:
 
 ```sh
 lecodes plugin gen            # write them

@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Merged into the consuming app by the AGP manifest merger. -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- FCM: on Android 13+ notifications are not shown at all without this. -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+    <application>
+        <!-- FCM entry point (docs/push-plan.md). Data-only messages — the service renders
+             the notification itself on a per-project channel (native per-app mute). -->
+        <service
+            android:name="io.letary.lecodes.plugins.push.LePushMessagingService"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.google.firebase.MESSAGING_EVENT" />
+            </intent-filter>
+        </service>
+    </application>
+
+</manifest>
