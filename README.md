@@ -2,8 +2,8 @@
 
 First-party native plugins of LeCodes apps, for the 2.x SDK: iOS, Android and the web.
 
-> **Status: in progress.** The contracts, the app's side (`sdk/`) and the halves (`ios/`, `android/`,
-> `web/`) are here; the manifests are not yet. The 1.x plugins live in
+> **Status: in progress.** The contracts, the manifests, the app's side (`sdk/`) and the halves
+> (`ios/`, `android/`, `web/`) are here. The 1.x plugins live in
 > [lecodes-plugins-legacy](https://github.com/letary/lecodes-plugins-legacy).
 
 Desktop plugins are a separate system (a prebuilt library behind a C ABI) and are not part of this
@@ -26,7 +26,7 @@ One plugin per directory; a folder is a DESTINATION:
 
 ```
 plugins/<id>/
-  lecodes-plugin.json     the manifest: ios / android / web, null = not supported
+  lecodes-plugin.json     the manifest: what a host needs to build the plugin in
   contract.d.ts           the contract of the channel — the source of truth
   sdk/                    → the app's bundle: the wrapper the app calls (TypeScript source)
   ios/                    → the iOS shell (Swift)
@@ -81,12 +81,51 @@ export interface CameraView extends View<"camera", CameraParams, CameraEvents> {
 | a union of string literals | an enum |
 | `interface`, `T[]`, `[A, B]`, `T \| null`, `key?:` | a struct, a list, a tuple, a nullable, an optional |
 
+## The manifest
+
+`lecodes-plugin.json` says what a host needs to BUILD the plugin in — never what the plugin does
+(that is the contract) nor where its code is (that is the folders):
+
+```json
+{
+  "id": "map",
+  "name": "Map",
+  "version": "2.0.0",
+  "sdk": "^2.0.0",
+  "ios": {
+    "register": "LeCodesMapPlugin",
+    "packages": [{ "url": "https://github.com/maplibre/maplibre-gl-native-distribution", "exact": "6.29.0", "products": ["MapLibre"] }]
+  },
+  "android": {
+    "register": "io.letary.lecodes.plugins.map.LeCodesMapPlugin",
+    "dependencies": ["org.maplibre.gl:android-sdk:13.6.0"]
+  },
+  "web": {
+    "register": "web/map.ts",
+    "dependencies": { "maplibre-gl": "^6.7.0" },
+    "resources": {
+      "workerUrl": { "module": "maplibre-gl/dist/maplibre-gl-worker.mjs", "as": "worker-url" },
+      "css": { "module": "maplibre-gl/dist/maplibre-gl.css", "as": "text" }
+    }
+  }
+}
+```
+
+- A platform is ALWAYS a key: an object where the plugin has a half, `null` where it has none.
+- `register` is the hand-written type a host calls: `static func register(in:)` on iOS,
+  `fun register(engine, context)` on Android, the module that exports `register(host)` on the web.
+- iOS: `infoPlist` (usage strings), `entitlements`, `packages`. Android: `dependencies` (Maven; a
+  `platform:` prefix is a BoM), `gradlePlugins`; permissions and services are the half's own
+  `AndroidManifest.xml`. Web: `dependencies` (npm), `resources` — what the half asks of its bundler,
+  handed to `register` under these names, so the half names no bundler.
+- `lecodes plugin gen` holds the manifest to the plugin's folders.
+
 ## Plugins
 
 | id | channel | name | web |
 |---|---|---|---|
 | `camera` | view | `camera` | yes |
-| `qr-scanner` | view | `qrScanner` | planned |
+| `qr-scanner` | view | `qrScanner` | yes, where the browser has `BarcodeDetector` |
 | `map` | view | `map` | yes |
 | `geolocation` | service | `geolocation` | yes |
 | `push` | service | `push` | no |

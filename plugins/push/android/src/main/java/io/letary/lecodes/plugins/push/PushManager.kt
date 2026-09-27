@@ -42,7 +42,7 @@ object PushManager {
     var engine: LecodesEngine? = null
         private set
 
-    /** PushPlugin.setForeground (host onResume/onPause) — a banner is suppressed only for a
+    /** The activity is resumed (LeCodesAppHooks.foreground, the host's onResume / onPause) — a banner is suppressed only for a
      *  foregrounded same-project world (the iOS willPresent rule). */
     @Volatile var isForeground = false
 
@@ -162,7 +162,7 @@ object PushManager {
         }
     }
 
-    // ── tap routing (PushPlugin → host activity) ─────────────────────────────
+    // ── tap routing (the host's activity → LeCodesAppHooks → here) ──────────
 
     /** Cold start: park the payload for getLaunch() BEFORE the engine boots. The intent's
      *  le.codes/qr data URI rides the normal launchUrl path unchanged. The extra is consumed so

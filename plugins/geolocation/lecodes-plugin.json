@@ -1,0 +1,21 @@
+{
+  "id": "geolocation",
+  "name": "Geolocation",
+  "version": "2.0.0",
+  "sdk": "^2.0.0",
+  "description": "The device position: one fix, or a watch (CoreLocation, LocationManager, navigator.geolocation). The app's side is Geolocation.",
+  "ios": {
+    "module": "LeCodesGeolocation",
+    "register": "LeCodesGeolocationPlugin",
+    "infoPlist": {
+      "NSLocationWhenInUseUsageDescription": "The app uses your location to show position-aware content."
+    }
+  },
+  "android": {
+    "module": "lecodes-geolocation",
+    "register": "io.letary.lecodes.plugins.geolocation.LeCodesGeolocationPlugin"
+  },
+  "web": {
+    "register": "web/geolocation.ts"
+  }
+}

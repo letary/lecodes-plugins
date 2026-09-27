@@ -1,0 +1,21 @@
+{
+  "id": "qr-scanner",
+  "name": "QR Scanner",
+  "version": "2.0.0",
+  "sdk": "^2.0.0",
+  "description": "A camera view that decodes QR codes and reports them as scan events. The app's side is QRScanner().",
+  "ios": {
+    "module": "LeCodesQRScanner",
+    "register": "LeCodesQRScannerPlugin",
+    "infoPlist": {
+      "NSCameraUsageDescription": "The app uses the camera to scan QR codes."
+    }
+  },
+  "android": {
+    "module": "lecodes-qr-scanner",
+    "register": "io.letary.lecodes.plugins.qrscanner.LeCodesQRScannerPlugin"
+  },
+  "web": {
+    "register": "web/qr-scanner.ts"
+  }
+}

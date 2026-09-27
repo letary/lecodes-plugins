@@ -60,7 +60,7 @@ class LePushMessagingService : FirebaseMessagingService() {
         // The tap intent targets the host's launcher activity (resolved at runtime — a vendored
         // plugin cannot name the app's MainActivity class), carrying the same le.codes/qr URI a
         // QR scan produces (so the existing launchUrl machinery routes it) plus the payload
-        // extra the host hands to LeCodesPushPlugin for the "tap"/getLaunch paths. Explicit component →
+        // extra the host's activity forwards (LeCodesAppHooks) for the "tap"/getLaunch paths. Explicit component →
         // singleTask delivers a warm tap to onNewIntent regardless of the app's intent filters.
         // Unique requestCode per notification keeps PendingIntent extras from merging.
         val requestCode = (SystemClock.elapsedRealtime() and 0x7FFFFFFF).toInt()

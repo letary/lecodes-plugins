@@ -1,0 +1,43 @@
+{
+  "id": "map",
+  "name": "Map",
+  "version": "2.0.0",
+  "sdk": "^2.0.0",
+  "description": "A vector map over MapLibre: a style, marker and line layers, the camera, the user puck — the same style and layer model on iOS, Android and the web. The app's side is MapView().",
+  "ios": {
+    "module": "LeCodesMap",
+    "register": "LeCodesMapPlugin",
+    "packages": [
+      {
+        "url": "https://github.com/maplibre/maplibre-gl-native-distribution",
+        "exact": "6.29.0",
+        "products": [
+          "MapLibre"
+        ]
+      }
+    ]
+  },
+  "android": {
+    "module": "lecodes-map",
+    "register": "io.letary.lecodes.plugins.map.LeCodesMapPlugin",
+    "dependencies": [
+      "org.maplibre.gl:android-sdk:13.6.0"
+    ]
+  },
+  "web": {
+    "register": "web/map.ts",
+    "dependencies": {
+      "maplibre-gl": "^6.7.0"
+    },
+    "resources": {
+      "workerUrl": {
+        "module": "maplibre-gl/dist/maplibre-gl-worker.mjs",
+        "as": "worker-url"
+      },
+      "css": {
+        "module": "maplibre-gl/dist/maplibre-gl.css",
+        "as": "text"
+      }
+    }
+  }
+}

@@ -1,0 +1,21 @@
+{
+  "id": "camera",
+  "name": "Camera",
+  "version": "2.0.0",
+  "sdk": "^2.0.0",
+  "description": "A live camera preview with still capture and a facing-mode switch. The app's side is CameraView().",
+  "ios": {
+    "module": "LeCodesCamera",
+    "register": "LeCodesCameraPlugin",
+    "infoPlist": {
+      "NSCameraUsageDescription": "The app uses the camera to take photos."
+    }
+  },
+  "android": {
+    "module": "lecodes-camera",
+    "register": "io.letary.lecodes.plugins.camera.LeCodesCameraPlugin"
+  },
+  "web": {
+    "register": "web/camera.ts"
+  }
+}
