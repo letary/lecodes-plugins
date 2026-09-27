@@ -2,8 +2,8 @@
 
 First-party native plugins of LeCodes apps, for the 2.x SDK: iOS, Android and the web.
 
-> **Status: in progress.** The contracts, the app's side (`sdk/`) and the native halves (`ios/`,
-> `android/`) are here; `web/` is not yet. The 1.x plugins live in
+> **Status: in progress.** The contracts, the app's side (`sdk/`) and the halves (`ios/`, `android/`,
+> `web/`) are here; the manifests are not yet. The 1.x plugins live in
 > [lecodes-plugins-legacy](https://github.com/letary/lecodes-plugins-legacy).
 
 Desktop plugins are a separate system (a prebuilt library behind a C ABI) and are not part of this

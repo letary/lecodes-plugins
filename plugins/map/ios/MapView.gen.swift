@@ -286,10 +286,10 @@ public struct MapCamera {
 
     var wire: Any {
         var o: [String: Any] = [:]
-        o["center"] = [center.0, center.1] as [Any]
-        o["zoom"] = zoom
-        o["bearing"] = bearing
-        o["pitch"] = pitch
+        o["center"] = [Wire.number(center.0), Wire.number(center.1)] as [Any]
+        o["zoom"] = Wire.number(zoom)
+        o["bearing"] = Wire.number(bearing)
+        o["pitch"] = Wire.number(pitch)
         return o
     }
 }
@@ -325,7 +325,7 @@ public enum MapFeatureId {
     var wire: Any {
         switch self {
         case .string(let v): return v
-        case .number(let v): return v
+        case .number(let v): return Wire.number(v)
         }
     }
 }
@@ -368,8 +368,8 @@ public struct MapTap {
 
     var wire: Any {
         var o: [String: Any] = [:]
-        o["lngLat"] = [lngLat.0, lngLat.1] as [Any]
-        o["point"] = [point.0, point.1] as [Any]
+        o["lngLat"] = [Wire.number(lngLat.0), Wire.number(lngLat.1)] as [Any]
+        o["point"] = [Wire.number(point.0), Wire.number(point.1)] as [Any]
         if let v = feature { o["feature"] = v.wire }
         return o
     }

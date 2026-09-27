@@ -64,13 +64,13 @@ public struct GeoPosition {
 
     var wire: Any {
         var o: [String: Any] = [:]
-        o["latitude"] = latitude
-        o["longitude"] = longitude
-        o["accuracy"] = accuracy
-        if let v = altitude { o["altitude"] = v } else { o["altitude"] = NSNull() }
-        if let v = heading { o["heading"] = v } else { o["heading"] = NSNull() }
-        if let v = speed { o["speed"] = v } else { o["speed"] = NSNull() }
-        o["timestamp"] = timestamp
+        o["latitude"] = Wire.number(latitude)
+        o["longitude"] = Wire.number(longitude)
+        o["accuracy"] = Wire.number(accuracy)
+        if let v = altitude { o["altitude"] = Wire.number(v) } else { o["altitude"] = NSNull() }
+        if let v = heading { o["heading"] = Wire.number(v) } else { o["heading"] = NSNull() }
+        if let v = speed { o["speed"] = Wire.number(v) } else { o["speed"] = NSNull() }
+        o["timestamp"] = Wire.number(timestamp)
         return o
     }
 }
