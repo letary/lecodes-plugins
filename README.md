@@ -2,8 +2,8 @@
 
 First-party native plugins of LeCodes apps, for the 2.x SDK: iOS, Android and the web.
 
-> **Status: in progress.** The contracts are written; the generator and the platform halves are
-> not here yet. The 1.x plugins live in
+> **Status: in progress.** The contracts and the app's side (`sdk/`) are here; the platform halves
+> (`ios/`, `android/`, `web/`) are not yet. The 1.x plugins live in
 > [lecodes-plugins-legacy](https://github.com/letary/lecodes-plugins-legacy).
 
 Desktop plugins are a separate system (a prebuilt library behind a C ABI) and are not part of this
@@ -34,7 +34,15 @@ plugins/<id>/
   web/                    → the web host (TypeScript)
 ```
 
-Generated files sit beside the hand-written ones and end in `.gen.*`. They are committed.
+Generated files sit beside the hand-written ones and end in `.gen.*`. They are committed:
+
+```sh
+lecodes plugin gen            # write them
+lecodes plugin gen --check    # fail on a stale one (CI)
+```
+
+`sdk/<id>.ts` is the hand-written part of the wrapper, and optional: without it the generated file
+exports the public API itself — the wire's methods and a typed `on(event, …)`.
 
 ## The contract
 
