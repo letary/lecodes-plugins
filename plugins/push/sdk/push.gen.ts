@@ -27,7 +27,7 @@ export const unregister = (service: ServiceChannel<PushEvents>): Promise<void> =
 
 /** The notification that cold-started this world, or null. Stable across calls. */
 export const getLaunch = (service: ServiceChannel<PushEvents>): Promise<PushPayload | null> =>
-  service._call("getLaunch", [])
+  service._call("getLaunch", []).then((w: any) => w ?? null)
 
 // ---- the client -----------------------------------------------------------------------------------
 
