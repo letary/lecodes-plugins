@@ -14,11 +14,11 @@ export const VERSION = 1
 /** Capture a still frame as a JPEG.
  *  Rejects with "failed". */
 export const takePhoto = (view: ViewChannel<CameraEvents>): Promise<File> =>
-  view._call("takePhoto", [], 1, true).then((w: any) => _toFile(w))
+  view._call("takePhoto", []).then((w: any) => _toFile(w))
 
 /** Switch the camera while the preview is live. */
 export const setFacingMode = (view: ViewChannel<CameraEvents>, mode: Facing): Promise<void> =>
-  view._call("setFacingMode", [mode], 1, true)
+  view._call("setFacingMode", [mode])
 
 // ---- what the host's half has --------------------------------------------------------------------
 

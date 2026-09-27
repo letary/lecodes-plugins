@@ -10,14 +10,18 @@ import io.letary.lecodes.services.PluginEmit
 import io.letary.lecodes.services.Reply
 import io.letary.lecodes.services.Services
 import io.letary.lecodes.services.Wire
-import org.json.JSONArray
-import org.json.JSONObject
+import io.letary.lecodes.core.PackedReader
+import io.letary.lecodes.core.PackedWriter
 
 // ---- The contract's types ----
 
 class GeolocationParams {
     companion object {
-        internal fun fromWire(wire: Any?): GeolocationParams? = if (!Wire.present(wire) || Wire.obj(wire) != null) GeolocationParams() else null
+        internal fun read(r: PackedReader): GeolocationParams? {
+            if (r.isNull()) return GeolocationParams()
+            if (r.beginObject() < 0) return null
+            return GeolocationParams()
+        }
     }
 }
 
@@ -28,11 +32,19 @@ data class GeoOptions(
     val timeout: Double? = null,
 ) {
     companion object {
-        internal fun fromWire(wire: Any?): GeoOptions? {
-            val o = Wire.obj(wire) ?: return null
-            val highAccuracy = if (Wire.present(o.opt("highAccuracy"))) (Wire.bool(o.opt("highAccuracy")) ?: return null) else null
-            val timeout = if (Wire.present(o.opt("timeout"))) (Wire.f64(o.opt("timeout")) ?: return null) else null
-            return GeoOptions(highAccuracy = highAccuracy, timeout = timeout)
+        internal fun read(r: PackedReader): GeoOptions? {
+            val n = r.beginObject()
+            if (n < 0) return null
+            var m0: Boolean? = null
+            var m1: Double? = null
+            repeat(n) {
+                when (r.key()) {
+                    "highAccuracy" -> if (r.isNull()) r.skip() else m0 = r.bool() ?: return null
+                    "timeout" -> if (r.isNull()) r.skip() else m1 = r.f64() ?: return null
+                    else -> r.skip()
+                }
+            }
+            return GeoOptions(highAccuracy = m0, timeout = m1)
         }
     }
 }
@@ -51,18 +63,20 @@ data class GeoPosition(
     /** When the fix was taken, ms since the epoch. */
     val timestamp: Double,
 ) {
-    internal val wire: Any
-        get() {
-            val o = JSONObject()
-            o.put("latitude", Wire.number(latitude))
-            o.put("longitude", Wire.number(longitude))
-            o.put("accuracy", Wire.number(accuracy))
-            o.put("altitude", (altitude?.let { v0 -> Wire.number(v0) } ?: JSONObject.NULL))
-            o.put("heading", (heading?.let { v0 -> Wire.number(v0) } ?: JSONObject.NULL))
-            o.put("speed", (speed?.let { v0 -> Wire.number(v0) } ?: JSONObject.NULL))
-            o.put("timestamp", Wire.number(timestamp))
-            return o
-        }
+    internal fun write(w: PackedWriter) {
+        w.beginObject()
+        w.key("latitude"); w.f64(this.latitude)
+        w.key("longitude"); w.f64(this.longitude)
+        w.key("accuracy"); w.f64(this.accuracy)
+        w.key("altitude")
+        this.altitude.let { v0 -> if (v0 != null) w.f64(v0) else w.nil() }
+        w.key("heading")
+        this.heading.let { v0 -> if (v0 != null) w.f64(v0) else w.nil() }
+        w.key("speed")
+        this.speed.let { v0 -> if (v0 != null) w.f64(v0) else w.nil() }
+        w.key("timestamp"); w.f64(this.timestamp)
+        w.end()
+    }
 }
 
 // ---- Geolocation ----
@@ -77,7 +91,11 @@ enum class GeolocationCode(override val code: String) : PluginCode {
 /** The events of "geolocation": what the plugin sends the app. Any thread. */
 class GeolocationEvents(private val channel: PluginEmit) {
     /** A fix of the live watch. */
-    fun position(payload: GeoPosition) = channel.emit("position", payload.wire)
+    fun position(payload: GeoPosition) {
+        val w = PackedWriter()
+        payload.write(w)
+        channel.emit("position", w.bytes())
+    }
 }
 
 /**
@@ -117,28 +135,27 @@ object GeolocationChannel {
      *  prompt, no I/O: that belongs to the first call that needs it. */
     fun register(engine: LecodesEngine, make: (params: GeolocationParams, events: GeolocationEvents) -> GeolocationPlugin) {
         engine.registerService(NAME, VERSION) { params, channel ->
-            val plugin = make(GeolocationParams.fromWire(params) ?: GeolocationParams(), GeolocationEvents { event, data -> channel.emitValue(event, data) })
-            Services.Instance(onCall = { call -> GeolocationGlue.call(plugin, call.method, call.args, call) }, onClose = { plugin.close() })
+            val plugin = make(GeolocationParams.read(Wire.reader(params)) ?: GeolocationParams(), GeolocationEvents { event, packed -> channel.emitPacked(event, packed) })
+            Services.Instance(onCall = { call -> GeolocationGlue.call(plugin, call.method, call.reader(), call) }, onClose = { plugin.close() })
         }
     }
 }
 
 /** Reads a call off the wire and hands it to the plugin; a malformed call never reaches it. */
 internal object GeolocationGlue {
-    fun call(plugin: GeolocationPlugin, method: String, args: JSONArray, settle: ChannelSettle) {
+    fun call(plugin: GeolocationPlugin, method: String, r: PackedReader, settle: ChannelSettle) {
+        val n = r.beginArray()   // the arguments, in their order
         when (method) {
             "getCurrent" -> {
-                val a0 = args.opt(0)
-                val options = if (Wire.present(a0)) (GeoOptions.fromWire(a0) ?: return settle.reject("bad arguments — Geolocation.getCurrent: options")) else null
-                plugin.getCurrent(options, Reply<GeoPosition, GeolocationCode>(settle) { v -> v.wire })
+                val a0 = if (0 < n && !r.isNull()) (GeoOptions.read(r) ?: return settle.reject("bad arguments — Geolocation.getCurrent: options")) else { if (0 < n) r.skip(); null }
+                plugin.getCurrent(a0, Reply<GeoPosition, GeolocationCode>(settle) { v, w -> v.write(w) })
             }
             "startWatch" -> {
-                val a0 = args.opt(0)
-                val options = if (Wire.present(a0)) (GeoOptions.fromWire(a0) ?: return settle.reject("bad arguments — Geolocation.startWatch: options")) else null
-                plugin.startWatch(options, Reply<Unit, GeolocationCode>(settle) { null })
+                val a0 = if (0 < n && !r.isNull()) (GeoOptions.read(r) ?: return settle.reject("bad arguments — Geolocation.startWatch: options")) else { if (0 < n) r.skip(); null }
+                plugin.startWatch(a0, Reply<Unit, GeolocationCode>(settle, null))
             }
             "stopWatch" -> {
-                plugin.stopWatch(Reply<Unit, GeolocationCode>(settle) { null })
+                plugin.stopWatch(Reply<Unit, GeolocationCode>(settle, null))
             }
             else -> settle.reject("Unknown method: $method")
         }

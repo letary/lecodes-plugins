@@ -8,14 +8,18 @@ import io.letary.lecodes.services.ChannelSettle
 import io.letary.lecodes.services.NativeViews
 import io.letary.lecodes.services.PluginEmit
 import io.letary.lecodes.services.Wire
-import org.json.JSONArray
-import org.json.JSONObject
+import io.letary.lecodes.core.PackedReader
+import io.letary.lecodes.core.PackedWriter
 
 // ---- The contract's types ----
 
 class QRScannerParams {
     companion object {
-        internal fun fromWire(wire: Any?): QRScannerParams? = if (!Wire.present(wire) || Wire.obj(wire) != null) QRScannerParams() else null
+        internal fun read(r: PackedReader): QRScannerParams? {
+            if (r.isNull()) return QRScannerParams()
+            if (r.beginObject() < 0) return null
+            return QRScannerParams()
+        }
     }
 }
 
@@ -28,9 +32,12 @@ class QRScannerEvents(private val channel: PluginEmit) {
      * repeats while the user aims). The same code may be reported more than once.
      */
     fun scan(data: String? = null) {
-        val o = JSONObject()
-        o.put("data", (data ?: JSONObject.NULL))
-        channel.emit("scan", o)
+        val w = PackedWriter()
+        w.beginObject()
+        w.key("data")
+        data.let { v0 -> if (v0 != null) w.string(v0) else w.nil() }
+        w.end()
+        this.channel.emit("scan", w.bytes())
     }
 }
 
@@ -58,15 +65,16 @@ object QRScannerChannel {
     /** Register the view: `make` builds one instance from its params. */
     fun register(engine: LecodesEngine, make: (params: QRScannerParams, events: QRScannerEvents) -> QRScannerPlugin) {
         engine.registerView(NAME, VERSION) { params, channel ->
-            val plugin = make(QRScannerParams.fromWire(params) ?: QRScannerParams(), QRScannerEvents { event, data -> channel.emitValue(event, data) })
-            NativeViews.Instance(plugin.view, onCall = { call -> QRScannerGlue.call(plugin, call.method, call.args, call) }, onDestroy = { plugin.destroy() })
+            val plugin = make(QRScannerParams.read(Wire.reader(params)) ?: QRScannerParams(), QRScannerEvents { event, packed -> channel.emitPacked(event, packed) })
+            NativeViews.Instance(plugin.view, onCall = { call -> QRScannerGlue.call(plugin, call.method, call.reader(), call) }, onDestroy = { plugin.destroy() })
         }
     }
 }
 
 /** Reads a call off the wire and hands it to the plugin; a malformed call never reaches it. */
 internal object QRScannerGlue {
-    fun call(plugin: QRScannerPlugin, method: String, args: JSONArray, settle: ChannelSettle) {
+    fun call(plugin: QRScannerPlugin, method: String, r: PackedReader, settle: ChannelSettle) {
+        val n = r.beginArray()   // the arguments, in their order
         when (method) {
             else -> settle.reject("Unknown method: $method")
         }

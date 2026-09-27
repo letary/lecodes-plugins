@@ -11,8 +11,8 @@ public enum Facing: String {
     case front
     case back
 
-    init?(wire: Any?) {
-        guard let raw = Wire.string(wire), let value = Facing(rawValue: raw) else { return nil }
+    init?(wire: WireIn) {
+        guard let raw = wire.string, let value = Facing(rawValue: raw) else { return nil }
         self = value
     }
 }
@@ -25,12 +25,15 @@ public struct CameraParams {
         self.facingMode = facingMode
     }
 
-    init?(wire: Any?) {
-        guard let o = Wire.object(wire) else { return nil }
-        if Wire.present(o["facingMode"]) {
-            guard let facingMode = Facing(wire: o["facingMode"]) else { return nil }
-            self.facingMode = facingMode
-        } else { self.facingMode = nil }
+    init?(wire: WireIn) {
+        guard wire.isObject else { return nil }
+        let m0 = wire["facingMode", 0]
+        if m0.isPresent {
+            guard let v = Facing(wire: m0) else { return nil }
+            self.facingMode = v
+        } else {
+            self.facingMode = nil
+        }
     }
 }
 
@@ -47,9 +50,11 @@ public struct CameraViewEvents {
 
     /// The preview could not start or stopped (no camera, the stream was refused).
     public func error(message: String) {
-        var o: [String: Any] = [:]
-        o["message"] = message
-        channel.emit("error", o)
+        self.channel.emit("error") { w in
+            w.beginObject(1)
+            w.key("message"); w.string(message)
+            w.end()
+        }
     }
 }
 
@@ -83,26 +88,26 @@ public enum CameraViewChannel {
     /// Register the view: `make` builds one instance from its params.
     public static func register(in engine: LeCodesEngine, _ make: @escaping (CameraParams, CameraViewEvents) -> CameraViewPlugin) {
         engine.registerView(name, version: Int32(version)) { params, channel in
-            CameraViewGlue(make(CameraParams(wire: params) ?? CameraParams(), CameraViewEvents(channel: channel)))
+            CameraViewGlue(make(WireIn.of(params, { CameraParams(wire: $0) }) ?? CameraParams(), CameraViewEvents(channel: channel)))
         }
     }
 }
 
 /// Reads a call off the wire and hands it to the plugin; a malformed call never reaches it.
-final class CameraViewGlue: NativeViewInstance {
+final class CameraViewGlue: WireNativeViewInstance {
     private let plugin: CameraViewPlugin
 
     init(_ plugin: CameraViewPlugin) { self.plugin = plugin }
 
     var view: UIView { plugin.view }
 
-    func call(_ method: String, _ args: [Any], _ settle: ChannelSettle) {
+    func call(_ method: String, wire args: WireIn, _ settle: ChannelSettle) {
         switch method {
         case "takePhoto":
-            plugin.takePhoto(Reply<PluginFile, CameraViewCode>(settle) { v in v.wire })
+            plugin.takePhoto(Reply<PluginFile, CameraViewCode>(settle) { v, w in v.write(to: w) })
         case "setFacingMode":
-            guard let mode = Facing(wire: (args.count > 0 ? args[0] : nil)) else { return settle.reject("bad arguments — CameraView.setFacingMode: mode") }
-            plugin.setFacingMode(mode, Reply<Void, CameraViewCode>(settle) { _ in nil })
+            guard let a0 = Facing(wire: args[0]) else { return settle.reject("bad arguments — CameraView.setFacingMode: mode") }
+            plugin.setFacingMode(a0, Reply<Void, CameraViewCode>(settle))
         default:
             settle.reject("Unknown method: \(method)")
         }

@@ -9,8 +9,8 @@ import LeCodes
 public struct GeolocationParams {
     public init() {}
 
-    init?(wire: Any?) {
-        guard wire == nil || wire is NSNull || Wire.object(wire) != nil else { return nil }
+    init?(wire: WireIn) {
+        guard !wire.isPresent || wire.isObject else { return nil }
     }
 }
 
@@ -25,16 +25,22 @@ public struct GeoOptions {
         self.timeout = timeout
     }
 
-    init?(wire: Any?) {
-        guard let o = Wire.object(wire) else { return nil }
-        if Wire.present(o["highAccuracy"]) {
-            guard let highAccuracy = Wire.bool(o["highAccuracy"]) else { return nil }
-            self.highAccuracy = highAccuracy
-        } else { self.highAccuracy = nil }
-        if Wire.present(o["timeout"]) {
-            guard let timeout = Wire.f64(o["timeout"]) else { return nil }
-            self.timeout = timeout
-        } else { self.timeout = nil }
+    init?(wire: WireIn) {
+        guard wire.isObject else { return nil }
+        let m0 = wire["highAccuracy", 0]
+        if m0.isPresent {
+            guard let v = m0.bool else { return nil }
+            self.highAccuracy = v
+        } else {
+            self.highAccuracy = nil
+        }
+        let m1 = wire["timeout", 1]
+        if m1.isPresent {
+            guard let v = m1.f64 else { return nil }
+            self.timeout = v
+        } else {
+            self.timeout = nil
+        }
     }
 }
 
@@ -62,16 +68,19 @@ public struct GeoPosition {
         self.timestamp = timestamp
     }
 
-    var wire: Any {
-        var o: [String: Any] = [:]
-        o["latitude"] = Wire.number(latitude)
-        o["longitude"] = Wire.number(longitude)
-        o["accuracy"] = Wire.number(accuracy)
-        if let v = altitude { o["altitude"] = Wire.number(v) } else { o["altitude"] = NSNull() }
-        if let v = heading { o["heading"] = Wire.number(v) } else { o["heading"] = NSNull() }
-        if let v = speed { o["speed"] = Wire.number(v) } else { o["speed"] = NSNull() }
-        o["timestamp"] = Wire.number(timestamp)
-        return o
+    func write(to w: WireOut) {
+        w.beginObject(7)
+        w.key("latitude"); w.f64(self.latitude)
+        w.key("longitude"); w.f64(self.longitude)
+        w.key("accuracy"); w.f64(self.accuracy)
+        w.key("altitude")
+        if let v0 = self.altitude { w.f64(v0) } else { w.null() }
+        w.key("heading")
+        if let v0 = self.heading { w.f64(v0) } else { w.null() }
+        w.key("speed")
+        if let v0 = self.speed { w.f64(v0) } else { w.null() }
+        w.key("timestamp"); w.f64(self.timestamp)
+        w.end()
     }
 }
 
@@ -89,7 +98,9 @@ public struct GeolocationEvents {
     let channel: ServiceChannel
 
     /// A fix of the live watch.
-    public func position(_ payload: GeoPosition) { channel.emit("position", payload.wire) }
+    public func position(_ payload: GeoPosition) {
+        channel.emit("position") { w in payload.write(to: w) }
+    }
 }
 
 /// The service "geolocation".
@@ -123,37 +134,37 @@ public enum GeolocationChannel {
     /// no I/O: that belongs to the first call that needs it.
     public static func register(in engine: LeCodesEngine, _ make: @escaping (GeolocationParams, GeolocationEvents) -> GeolocationPlugin) {
         engine.registerService(name, version: Int32(version)) { params, channel in
-            GeolocationGlue(make(GeolocationParams(wire: params) ?? GeolocationParams(), GeolocationEvents(channel: channel)))
+            GeolocationGlue(make(WireIn.of(params, { GeolocationParams(wire: $0) }) ?? GeolocationParams(), GeolocationEvents(channel: channel)))
         }
     }
 }
 
 /// Reads a call off the wire and hands it to the plugin; a malformed call never reaches it.
-final class GeolocationGlue: ServiceInstance {
+final class GeolocationGlue: WireServiceInstance {
     private let plugin: GeolocationPlugin
 
     init(_ plugin: GeolocationPlugin) { self.plugin = plugin }
 
-    func call(_ method: String, _ args: [Any], _ settle: ChannelSettle) {
+    func call(_ method: String, wire args: WireIn, _ settle: ChannelSettle) {
         switch method {
         case "getCurrent":
-            let a0: Any? = args.count > 0 ? args[0] : nil
-            var options: GeoOptions? = nil
-            if Wire.present(a0) {
-                guard let v = GeoOptions(wire: a0) else { return settle.reject("bad arguments — Geolocation.getCurrent: options") }
-                options = v
+            let w0 = args[0]
+            var a0: GeoOptions? = nil
+            if w0.isPresent {
+                guard let v = GeoOptions(wire: w0) else { return settle.reject("bad arguments — Geolocation.getCurrent: options") }
+                a0 = v
             }
-            plugin.getCurrent(options, Reply<GeoPosition, GeolocationCode>(settle) { v in v.wire })
+            plugin.getCurrent(a0, Reply<GeoPosition, GeolocationCode>(settle) { v, w in v.write(to: w) })
         case "startWatch":
-            let a0: Any? = args.count > 0 ? args[0] : nil
-            var options: GeoOptions? = nil
-            if Wire.present(a0) {
-                guard let v = GeoOptions(wire: a0) else { return settle.reject("bad arguments — Geolocation.startWatch: options") }
-                options = v
+            let w0 = args[0]
+            var a0: GeoOptions? = nil
+            if w0.isPresent {
+                guard let v = GeoOptions(wire: w0) else { return settle.reject("bad arguments — Geolocation.startWatch: options") }
+                a0 = v
             }
-            plugin.startWatch(options, Reply<Void, GeolocationCode>(settle) { _ in nil })
+            plugin.startWatch(a0, Reply<Void, GeolocationCode>(settle))
         case "stopWatch":
-            plugin.stopWatch(Reply<Void, GeolocationCode>(settle) { _ in nil })
+            plugin.stopWatch(Reply<Void, GeolocationCode>(settle))
         default:
             settle.reject("Unknown method: \(method)")
         }

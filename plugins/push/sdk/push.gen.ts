@@ -13,21 +13,21 @@ export const VERSION = 1
 
 /** Permission + registration state. Never prompts. */
 export const getStatus = (service: ServiceChannel<PushEvents>): Promise<PushStatus> =>
-  service._call("getStatus", [], 1, true)
+  service._call("getStatus", [])
 
 /** Ask for the permission (the first time) and register this device. Idempotent.
  *  Rejects with "denied" / "unavailable". */
 export const register = (service: ServiceChannel<PushEvents>, options?: PushRegisterOptions): Promise<PushRegistration> =>
-  service._call("register", [options], 1, true)
+  service._call("register", [options])
 
 /** Remove this device's registration.
  *  Rejects with "unavailable". */
 export const unregister = (service: ServiceChannel<PushEvents>): Promise<void> =>
-  service._call("unregister", [], 1, true)
+  service._call("unregister", [])
 
 /** The notification that cold-started this world, or null. Stable across calls. */
 export const getLaunch = (service: ServiceChannel<PushEvents>): Promise<PushPayload | null> =>
-  service._call("getLaunch", [], 1, true).then((w: any) => w ?? null)
+  service._call("getLaunch", []).then((w: any) => w ?? null)
 
 // ---- what the host's half has --------------------------------------------------------------------
 

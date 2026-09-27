@@ -10,8 +10,8 @@ import io.letary.lecodes.services.PluginCode
 import io.letary.lecodes.services.PluginEmit
 import io.letary.lecodes.services.Reply
 import io.letary.lecodes.services.Wire
-import org.json.JSONArray
-import org.json.JSONObject
+import io.letary.lecodes.core.PackedReader
+import io.letary.lecodes.core.PackedWriter
 
 // ---- The contract's types ----
 
@@ -38,19 +38,39 @@ data class MapParams(
     val tilt: Boolean? = null,
 ) {
     companion object {
-        internal fun fromWire(wire: Any?): MapParams? {
-            val o = Wire.obj(wire) ?: return null
-            val style = if (Wire.present(o.opt("style"))) (Wire.string(o.opt("style")) ?: return null) else null
-            val styleJson = if (Wire.present(o.opt("styleJson"))) (Wire.string(o.opt("styleJson")) ?: return null) else null
-            val center = if (Wire.present(o.opt("center"))) (Wire.array(o.opt("center"), 2)?.let { v0 -> val v0_0 = Wire.f64(v0.opt(0)) ?: return@let null; val v0_1 = Wire.f64(v0.opt(1)) ?: return@let null; Pair(v0_0, v0_1) } ?: return null) else null
-            val zoom = if (Wire.present(o.opt("zoom"))) (Wire.f64(o.opt("zoom")) ?: return null) else null
-            val minZoom = if (Wire.present(o.opt("minZoom"))) (Wire.f64(o.opt("minZoom")) ?: return null) else null
-            val maxZoom = if (Wire.present(o.opt("maxZoom"))) (Wire.f64(o.opt("maxZoom")) ?: return null) else null
-            val bearing = if (Wire.present(o.opt("bearing"))) (Wire.f64(o.opt("bearing")) ?: return null) else null
-            val pitch = if (Wire.present(o.opt("pitch"))) (Wire.f64(o.opt("pitch")) ?: return null) else null
-            val rotate = if (Wire.present(o.opt("rotate"))) (Wire.bool(o.opt("rotate")) ?: return null) else null
-            val tilt = if (Wire.present(o.opt("tilt"))) (Wire.bool(o.opt("tilt")) ?: return null) else null
-            return MapParams(style = style, styleJson = styleJson, center = center, zoom = zoom, minZoom = minZoom, maxZoom = maxZoom, bearing = bearing, pitch = pitch, rotate = rotate, tilt = tilt)
+        internal fun read(r: PackedReader): MapParams? {
+            val n = r.beginObject()
+            if (n < 0) return null
+            var m0: String? = null
+            var m1: String? = null
+            var m2: Pair<Double, Double>? = null
+            var m3: Double? = null
+            var m4: Double? = null
+            var m5: Double? = null
+            var m6: Double? = null
+            var m7: Double? = null
+            var m8: Boolean? = null
+            var m9: Boolean? = null
+            repeat(n) {
+                when (r.key()) {
+                    "style" -> if (r.isNull()) r.skip() else m0 = r.string() ?: return null
+                    "styleJson" -> if (r.isNull()) r.skip() else m1 = r.string() ?: return null
+                    "center" -> if (r.isNull()) r.skip() else m2 = r.tuple(2) {
+                        val v0_0 = r.f64() ?: return@tuple null
+                        val v0_1 = r.f64() ?: return@tuple null
+                        Pair(v0_0, v0_1)
+                    } ?: return null
+                    "zoom" -> if (r.isNull()) r.skip() else m3 = r.f64() ?: return null
+                    "minZoom" -> if (r.isNull()) r.skip() else m4 = r.f64() ?: return null
+                    "maxZoom" -> if (r.isNull()) r.skip() else m5 = r.f64() ?: return null
+                    "bearing" -> if (r.isNull()) r.skip() else m6 = r.f64() ?: return null
+                    "pitch" -> if (r.isNull()) r.skip() else m7 = r.f64() ?: return null
+                    "rotate" -> if (r.isNull()) r.skip() else m8 = r.bool() ?: return null
+                    "tilt" -> if (r.isNull()) r.skip() else m9 = r.bool() ?: return null
+                    else -> r.skip()
+                }
+            }
+            return MapParams(style = m0, styleJson = m1, center = m2, zoom = m3, minZoom = m4, maxZoom = m5, bearing = m6, pitch = m7, rotate = m8, tilt = m9)
         }
     }
 }
@@ -60,7 +80,7 @@ enum class MapLayerKind(val wire: String) {
     LINE("line");
 
     companion object {
-        internal fun fromWire(wire: Any?): MapLayerKind? = values().firstOrNull { it.wire == wire }
+        internal fun read(r: PackedReader): MapLayerKind? = r.string()?.let { s -> values().firstOrNull { it.wire == s } }
     }
 }
 
@@ -80,15 +100,27 @@ data class MapLayerOptions(
     val opacity: Double? = null,
 ) {
     companion object {
-        internal fun fromWire(wire: Any?): MapLayerOptions? {
-            val o = Wire.obj(wire) ?: return null
-            val cluster = if (Wire.present(o.opt("cluster"))) (Wire.bool(o.opt("cluster")) ?: return null) else null
-            val clusterRadius = if (Wire.present(o.opt("clusterRadius"))) (Wire.f64(o.opt("clusterRadius")) ?: return null) else null
-            val clusterMaxZoom = if (Wire.present(o.opt("clusterMaxZoom"))) (Wire.f64(o.opt("clusterMaxZoom")) ?: return null) else null
-            val color = if (Wire.present(o.opt("color"))) (Wire.string(o.opt("color")) ?: return null) else null
-            val width = if (Wire.present(o.opt("width"))) (Wire.f64(o.opt("width")) ?: return null) else null
-            val opacity = if (Wire.present(o.opt("opacity"))) (Wire.f64(o.opt("opacity")) ?: return null) else null
-            return MapLayerOptions(cluster = cluster, clusterRadius = clusterRadius, clusterMaxZoom = clusterMaxZoom, color = color, width = width, opacity = opacity)
+        internal fun read(r: PackedReader): MapLayerOptions? {
+            val n = r.beginObject()
+            if (n < 0) return null
+            var m0: Boolean? = null
+            var m1: Double? = null
+            var m2: Double? = null
+            var m3: String? = null
+            var m4: Double? = null
+            var m5: Double? = null
+            repeat(n) {
+                when (r.key()) {
+                    "cluster" -> if (r.isNull()) r.skip() else m0 = r.bool() ?: return null
+                    "clusterRadius" -> if (r.isNull()) r.skip() else m1 = r.f64() ?: return null
+                    "clusterMaxZoom" -> if (r.isNull()) r.skip() else m2 = r.f64() ?: return null
+                    "color" -> if (r.isNull()) r.skip() else m3 = r.string() ?: return null
+                    "width" -> if (r.isNull()) r.skip() else m4 = r.f64() ?: return null
+                    "opacity" -> if (r.isNull()) r.skip() else m5 = r.f64() ?: return null
+                    else -> r.skip()
+                }
+            }
+            return MapLayerOptions(cluster = m0, clusterRadius = m1, clusterMaxZoom = m2, color = m3, width = m4, opacity = m5)
         }
     }
 }
@@ -101,13 +133,23 @@ data class MapCameraMove(
     val duration: Double? = null,
 ) {
     companion object {
-        internal fun fromWire(wire: Any?): MapCameraMove? {
-            val o = Wire.obj(wire) ?: return null
-            val zoom = if (Wire.present(o.opt("zoom"))) (Wire.f64(o.opt("zoom")) ?: return null) else null
-            val bearing = if (Wire.present(o.opt("bearing"))) (Wire.f64(o.opt("bearing")) ?: return null) else null
-            val pitch = if (Wire.present(o.opt("pitch"))) (Wire.f64(o.opt("pitch")) ?: return null) else null
-            val duration = if (Wire.present(o.opt("duration"))) (Wire.f64(o.opt("duration")) ?: return null) else null
-            return MapCameraMove(zoom = zoom, bearing = bearing, pitch = pitch, duration = duration)
+        internal fun read(r: PackedReader): MapCameraMove? {
+            val n = r.beginObject()
+            if (n < 0) return null
+            var m0: Double? = null
+            var m1: Double? = null
+            var m2: Double? = null
+            var m3: Double? = null
+            repeat(n) {
+                when (r.key()) {
+                    "zoom" -> if (r.isNull()) r.skip() else m0 = r.f64() ?: return null
+                    "bearing" -> if (r.isNull()) r.skip() else m1 = r.f64() ?: return null
+                    "pitch" -> if (r.isNull()) r.skip() else m2 = r.f64() ?: return null
+                    "duration" -> if (r.isNull()) r.skip() else m3 = r.f64() ?: return null
+                    else -> r.skip()
+                }
+            }
+            return MapCameraMove(zoom = m0, bearing = m1, pitch = m2, duration = m3)
         }
     }
 }
@@ -118,10 +160,10 @@ sealed class MapInset {
     data class OfString(val value: String) : MapInset()
 
     companion object {
-        internal fun fromWire(wire: Any?): MapInset? {
-            Wire.f64(wire)?.let { return OfNumber(it) }
-            Wire.string(wire)?.let { return OfString(it) }
-            return null
+        internal fun read(r: PackedReader): MapInset? = when (r.kind()) {
+            PackedReader.NUMBER -> r.f64()?.let { OfNumber(it) }
+            PackedReader.TEXT -> r.string()?.let { OfString(it) }
+            else -> null
         }
     }
 }
@@ -133,13 +175,23 @@ data class MapPadding(
     val right: MapInset? = null,
 ) {
     companion object {
-        internal fun fromWire(wire: Any?): MapPadding? {
-            val o = Wire.obj(wire) ?: return null
-            val top = if (Wire.present(o.opt("top"))) (MapInset.fromWire(o.opt("top")) ?: return null) else null
-            val left = if (Wire.present(o.opt("left"))) (MapInset.fromWire(o.opt("left")) ?: return null) else null
-            val bottom = if (Wire.present(o.opt("bottom"))) (MapInset.fromWire(o.opt("bottom")) ?: return null) else null
-            val right = if (Wire.present(o.opt("right"))) (MapInset.fromWire(o.opt("right")) ?: return null) else null
-            return MapPadding(top = top, left = left, bottom = bottom, right = right)
+        internal fun read(r: PackedReader): MapPadding? {
+            val n = r.beginObject()
+            if (n < 0) return null
+            var m0: MapInset? = null
+            var m1: MapInset? = null
+            var m2: MapInset? = null
+            var m3: MapInset? = null
+            repeat(n) {
+                when (r.key()) {
+                    "top" -> if (r.isNull()) r.skip() else m0 = MapInset.read(r) ?: return null
+                    "left" -> if (r.isNull()) r.skip() else m1 = MapInset.read(r) ?: return null
+                    "bottom" -> if (r.isNull()) r.skip() else m2 = MapInset.read(r) ?: return null
+                    "right" -> if (r.isNull()) r.skip() else m3 = MapInset.read(r) ?: return null
+                    else -> r.skip()
+                }
+            }
+            return MapPadding(top = m0, left = m1, bottom = m2, right = m3)
         }
     }
 }
@@ -149,10 +201,10 @@ sealed class MapFitOptionsPadding {
     data class OfMapPadding(val value: MapPadding) : MapFitOptionsPadding()
 
     companion object {
-        internal fun fromWire(wire: Any?): MapFitOptionsPadding? {
-            Wire.f64(wire)?.let { return OfNumber(it) }
-            MapPadding.fromWire(wire)?.let { return OfMapPadding(it) }
-            return null
+        internal fun read(r: PackedReader): MapFitOptionsPadding? = when (r.kind()) {
+            PackedReader.NUMBER -> r.f64()?.let { OfNumber(it) }
+            PackedReader.MAP -> MapPadding.read(r)?.let { OfMapPadding(it) }
+            else -> null
         }
     }
 }
@@ -166,12 +218,21 @@ data class MapFitOptions(
     val animate: Boolean? = null,
 ) {
     companion object {
-        internal fun fromWire(wire: Any?): MapFitOptions? {
-            val o = Wire.obj(wire) ?: return null
-            val padding = if (Wire.present(o.opt("padding"))) (MapFitOptionsPadding.fromWire(o.opt("padding")) ?: return null) else null
-            val maxZoom = if (Wire.present(o.opt("maxZoom"))) (Wire.f64(o.opt("maxZoom")) ?: return null) else null
-            val animate = if (Wire.present(o.opt("animate"))) (Wire.bool(o.opt("animate")) ?: return null) else null
-            return MapFitOptions(padding = padding, maxZoom = maxZoom, animate = animate)
+        internal fun read(r: PackedReader): MapFitOptions? {
+            val n = r.beginObject()
+            if (n < 0) return null
+            var m0: MapFitOptionsPadding? = null
+            var m1: Double? = null
+            var m2: Boolean? = null
+            repeat(n) {
+                when (r.key()) {
+                    "padding" -> if (r.isNull()) r.skip() else m0 = MapFitOptionsPadding.read(r) ?: return null
+                    "maxZoom" -> if (r.isNull()) r.skip() else m1 = r.f64() ?: return null
+                    "animate" -> if (r.isNull()) r.skip() else m2 = r.bool() ?: return null
+                    else -> r.skip()
+                }
+            }
+            return MapFitOptions(padding = m0, maxZoom = m1, animate = m2)
         }
     }
 }
@@ -182,15 +243,18 @@ data class MapCamera(
     val bearing: Double,
     val pitch: Double,
 ) {
-    internal val wire: Any
-        get() {
-            val o = JSONObject()
-            o.put("center", JSONArray().put(Wire.number(center.first)).put(Wire.number(center.second)))
-            o.put("zoom", Wire.number(zoom))
-            o.put("bearing", Wire.number(bearing))
-            o.put("pitch", Wire.number(pitch))
-            return o
-        }
+    internal fun write(w: PackedWriter) {
+        w.beginObject()
+        w.key("center")
+        w.beginArray()
+        w.f64(this.center.first)
+        w.f64(this.center.second)
+        w.end()
+        w.key("zoom"); w.f64(this.zoom)
+        w.key("bearing"); w.f64(this.bearing)
+        w.key("pitch"); w.f64(this.pitch)
+        w.end()
+    }
 }
 
 data class MapUserLocationOptions(
@@ -200,11 +264,19 @@ data class MapUserLocationOptions(
     val heading: Double? = null,
 ) {
     companion object {
-        internal fun fromWire(wire: Any?): MapUserLocationOptions? {
-            val o = Wire.obj(wire) ?: return null
-            val accuracy = if (Wire.present(o.opt("accuracy"))) (Wire.f64(o.opt("accuracy")) ?: return null) else null
-            val heading = if (Wire.present(o.opt("heading"))) (Wire.f64(o.opt("heading")) ?: return null) else null
-            return MapUserLocationOptions(accuracy = accuracy, heading = heading)
+        internal fun read(r: PackedReader): MapUserLocationOptions? {
+            val n = r.beginObject()
+            if (n < 0) return null
+            var m0: Double? = null
+            var m1: Double? = null
+            repeat(n) {
+                when (r.key()) {
+                    "accuracy" -> if (r.isNull()) r.skip() else m0 = r.f64() ?: return null
+                    "heading" -> if (r.isNull()) r.skip() else m1 = r.f64() ?: return null
+                    else -> r.skip()
+                }
+            }
+            return MapUserLocationOptions(accuracy = m0, heading = m1)
         }
     }
 }
@@ -213,11 +285,12 @@ sealed class MapFeatureId {
     data class OfString(val value: String) : MapFeatureId()
     data class OfNumber(val value: Double) : MapFeatureId()
 
-    internal val wire: Any
-        get() = when (this) {
-            is OfString -> value
-            is OfNumber -> Wire.number(value)
+    internal fun write(w: PackedWriter) {
+        when (this) {
+            is OfString -> w.string(value)
+            is OfNumber -> w.f64(value)
         }
+    }
 }
 
 /** A feature of a managed source under a tap. */
@@ -227,14 +300,20 @@ data class MapFeature(
     val id: MapFeatureId? = null,
     val properties: Map<String, Any>,
 ) {
-    internal val wire: Any
-        get() {
-            val o = JSONObject()
-            o.put("source", source)
-            o.put("id", (id?.wire ?: JSONObject.NULL))
-            o.put("properties", Wire.writeMap(properties) { v0 -> v0 })
-            return o
+    internal fun write(w: PackedWriter) {
+        w.beginObject()
+        w.key("source"); w.string(this.source)
+        w.key("id")
+        this.id.let { v0 -> if (v0 != null) v0.write(w) else w.nil() }
+        w.key("properties")
+        w.beginObject()
+        for ((k0, v0) in this.properties) {
+            w.key(k0)
+            w.json(v0)
         }
+        w.end()
+        w.end()
+    }
 }
 
 data class MapTap(
@@ -247,14 +326,21 @@ data class MapTap(
      */
     val feature: MapFeature? = null,
 ) {
-    internal val wire: Any
-        get() {
-            val o = JSONObject()
-            o.put("lngLat", JSONArray().put(Wire.number(lngLat.first)).put(Wire.number(lngLat.second)))
-            o.put("point", JSONArray().put(Wire.number(point.first)).put(Wire.number(point.second)))
-            feature?.let { v -> o.put("feature", v.wire) }
-            return o
-        }
+    internal fun write(w: PackedWriter) {
+        w.beginObject()
+        w.key("lngLat")
+        w.beginArray()
+        w.f64(this.lngLat.first)
+        w.f64(this.lngLat.second)
+        w.end()
+        w.key("point")
+        w.beginArray()
+        w.f64(this.point.first)
+        w.f64(this.point.second)
+        w.end()
+        this.feature?.let { v -> w.key("feature"); v.write(w) }
+        w.end()
+    }
 }
 
 // ---- MapView ----
@@ -270,16 +356,26 @@ class MapViewEvents(private val channel: PluginEmit) {
     /** The style loaded and the map takes calls. Fires again after every style reload. */
     fun ready() = channel.emit("ready", null)
 
-    fun tap(payload: MapTap) = channel.emit("tap", payload.wire)
+    fun tap(payload: MapTap) {
+        val w = PackedWriter()
+        payload.write(w)
+        channel.emit("tap", w.bytes())
+    }
 
     /** The camera settled after a gesture or an animation. */
-    fun moveEnd(payload: MapCamera) = channel.emit("moveEnd", payload.wire)
+    fun moveEnd(payload: MapCamera) {
+        val w = PackedWriter()
+        payload.write(w)
+        channel.emit("moveEnd", w.bytes())
+    }
 
     /** A problem that is never fatal: a style that would not load, a source out of reach. */
     fun error(message: String) {
-        val o = JSONObject()
-        o.put("message", message)
-        channel.emit("error", o)
+        val w = PackedWriter()
+        w.beginObject()
+        w.key("message"); w.string(message)
+        w.end()
+        this.channel.emit("error", w.bytes())
     }
 }
 
@@ -341,63 +437,76 @@ object MapViewChannel {
     /** Register the view: `make` builds one instance from its params. */
     fun register(engine: LecodesEngine, make: (params: MapParams, events: MapViewEvents) -> MapViewPlugin) {
         engine.registerView(NAME, VERSION) { params, channel ->
-            val plugin = make(MapParams.fromWire(params) ?: MapParams(), MapViewEvents { event, data -> channel.emitValue(event, data) })
-            NativeViews.Instance(plugin.view, onCall = { call -> MapViewGlue.call(plugin, call.method, call.args, call) }, onDestroy = { plugin.destroy() })
+            val plugin = make(MapParams.read(Wire.reader(params)) ?: MapParams(), MapViewEvents { event, packed -> channel.emitPacked(event, packed) })
+            NativeViews.Instance(plugin.view, onCall = { call -> MapViewGlue.call(plugin, call.method, call.reader(), call) }, onDestroy = { plugin.destroy() })
         }
     }
 }
 
 /** Reads a call off the wire and hands it to the plugin; a malformed call never reaches it. */
 internal object MapViewGlue {
-    fun call(plugin: MapViewPlugin, method: String, args: JSONArray, settle: ChannelSettle) {
+    fun call(plugin: MapViewPlugin, method: String, r: PackedReader, settle: ChannelSettle) {
+        val n = r.beginArray()   // the arguments, in their order
         when (method) {
             "ensureLayer" -> {
-                val source = Wire.string(args.opt(0)) ?: return settle.reject("bad arguments — MapView.ensureLayer: source")
-                val kind = MapLayerKind.fromWire(args.opt(1)) ?: return settle.reject("bad arguments — MapView.ensureLayer: kind")
-                val a2 = args.opt(2)
-                val options = if (Wire.present(a2)) (MapLayerOptions.fromWire(a2) ?: return settle.reject("bad arguments — MapView.ensureLayer: options")) else null
-                plugin.ensureLayer(source, kind, options, Reply<Unit, MapViewCode>(settle) { null })
+                val a0 = (if (0 < n) r.string() else null) ?: return settle.reject("bad arguments — MapView.ensureLayer: source")
+                val a1 = (if (1 < n) MapLayerKind.read(r) else null) ?: return settle.reject("bad arguments — MapView.ensureLayer: kind")
+                val a2 = if (2 < n && !r.isNull()) (MapLayerOptions.read(r) ?: return settle.reject("bad arguments — MapView.ensureLayer: options")) else { if (2 < n) r.skip(); null }
+                plugin.ensureLayer(a0, a1, a2, Reply<Unit, MapViewCode>(settle, null))
             }
             "removeLayer" -> {
-                val source = Wire.string(args.opt(0)) ?: return settle.reject("bad arguments — MapView.removeLayer: source")
-                plugin.removeLayer(source, Reply<Unit, MapViewCode>(settle) { null })
+                val a0 = (if (0 < n) r.string() else null) ?: return settle.reject("bad arguments — MapView.removeLayer: source")
+                plugin.removeLayer(a0, Reply<Unit, MapViewCode>(settle, null))
             }
             "setData" -> {
-                val source = Wire.string(args.opt(0)) ?: return settle.reject("bad arguments — MapView.setData: source")
-                val geojson = Wire.json(args.opt(1)) ?: return settle.reject("bad arguments — MapView.setData: geojson")
-                plugin.setData(source, geojson, Reply<Unit, MapViewCode>(settle) { null })
+                val a0 = (if (0 < n) r.string() else null) ?: return settle.reject("bad arguments — MapView.setData: source")
+                val a1 = (if (1 < n) r.json() else null) ?: return settle.reject("bad arguments — MapView.setData: geojson")
+                plugin.setData(a0, a1, Reply<Unit, MapViewCode>(settle, null))
             }
             "flyTo" -> {
-                val center = Wire.array(args.opt(0), 2)?.let { v0 -> val v0_0 = Wire.f64(v0.opt(0)) ?: return@let null; val v0_1 = Wire.f64(v0.opt(1)) ?: return@let null; Pair(v0_0, v0_1) } ?: return settle.reject("bad arguments — MapView.flyTo: center")
-                val a1 = args.opt(1)
-                val options = if (Wire.present(a1)) (MapCameraMove.fromWire(a1) ?: return settle.reject("bad arguments — MapView.flyTo: options")) else null
-                plugin.flyTo(center, options, Reply<Unit, MapViewCode>(settle) { null })
+                val a0 = (if (0 < n) r.tuple(2) {
+                    val v0_0 = r.f64() ?: return@tuple null
+                    val v0_1 = r.f64() ?: return@tuple null
+                    Pair(v0_0, v0_1)
+                } else null) ?: return settle.reject("bad arguments — MapView.flyTo: center")
+                val a1 = if (1 < n && !r.isNull()) (MapCameraMove.read(r) ?: return settle.reject("bad arguments — MapView.flyTo: options")) else { if (1 < n) r.skip(); null }
+                plugin.flyTo(a0, a1, Reply<Unit, MapViewCode>(settle, null))
             }
             "jumpTo" -> {
-                val center = Wire.array(args.opt(0), 2)?.let { v0 -> val v0_0 = Wire.f64(v0.opt(0)) ?: return@let null; val v0_1 = Wire.f64(v0.opt(1)) ?: return@let null; Pair(v0_0, v0_1) } ?: return settle.reject("bad arguments — MapView.jumpTo: center")
-                val a1 = args.opt(1)
-                val options = if (Wire.present(a1)) (MapCameraMove.fromWire(a1) ?: return settle.reject("bad arguments — MapView.jumpTo: options")) else null
-                plugin.jumpTo(center, options, Reply<Unit, MapViewCode>(settle) { null })
+                val a0 = (if (0 < n) r.tuple(2) {
+                    val v0_0 = r.f64() ?: return@tuple null
+                    val v0_1 = r.f64() ?: return@tuple null
+                    Pair(v0_0, v0_1)
+                } else null) ?: return settle.reject("bad arguments — MapView.jumpTo: center")
+                val a1 = if (1 < n && !r.isNull()) (MapCameraMove.read(r) ?: return settle.reject("bad arguments — MapView.jumpTo: options")) else { if (1 < n) r.skip(); null }
+                plugin.jumpTo(a0, a1, Reply<Unit, MapViewCode>(settle, null))
             }
             "fitPoints" -> {
-                val points = Wire.list(args.opt(0)) { v0 -> Wire.array(v0, 2)?.let { v1 -> val v1_0 = Wire.f64(v1.opt(0)) ?: return@let null; val v1_1 = Wire.f64(v1.opt(1)) ?: return@let null; Pair(v1_0, v1_1) } } ?: return settle.reject("bad arguments — MapView.fitPoints: points")
-                val a1 = args.opt(1)
-                val options = if (Wire.present(a1)) (MapFitOptions.fromWire(a1) ?: return settle.reject("bad arguments — MapView.fitPoints: options")) else null
-                plugin.fitPoints(points, options, Reply<Unit, MapViewCode>(settle) { null })
+                val a0 = (if (0 < n) r.list {
+                    r.tuple(2) {
+                        val v1_0 = r.f64() ?: return@tuple null
+                        val v1_1 = r.f64() ?: return@tuple null
+                        Pair(v1_0, v1_1)
+                    }
+                } else null) ?: return settle.reject("bad arguments — MapView.fitPoints: points")
+                val a1 = if (1 < n && !r.isNull()) (MapFitOptions.read(r) ?: return settle.reject("bad arguments — MapView.fitPoints: options")) else { if (1 < n) r.skip(); null }
+                plugin.fitPoints(a0, a1, Reply<Unit, MapViewCode>(settle, null))
             }
             "setPadding" -> {
-                val padding = MapPadding.fromWire(args.opt(0)) ?: return settle.reject("bad arguments — MapView.setPadding: padding")
-                plugin.setPadding(padding, Reply<Unit, MapViewCode>(settle) { null })
+                val a0 = (if (0 < n) MapPadding.read(r) else null) ?: return settle.reject("bad arguments — MapView.setPadding: padding")
+                plugin.setPadding(a0, Reply<Unit, MapViewCode>(settle, null))
             }
             "getCamera" -> {
-                plugin.getCamera(Reply<MapCamera, MapViewCode>(settle) { v -> v.wire })
+                plugin.getCamera(Reply<MapCamera, MapViewCode>(settle) { v, w -> v.write(w) })
             }
             "setUserLocation" -> {
-                val a0 = args.opt(0)
-                val lngLat = if (Wire.present(a0)) (Wire.array(a0, 2)?.let { v0 -> val v0_0 = Wire.f64(v0.opt(0)) ?: return@let null; val v0_1 = Wire.f64(v0.opt(1)) ?: return@let null; Pair(v0_0, v0_1) } ?: return settle.reject("bad arguments — MapView.setUserLocation: lngLat")) else null
-                val a1 = args.opt(1)
-                val options = if (Wire.present(a1)) (MapUserLocationOptions.fromWire(a1) ?: return settle.reject("bad arguments — MapView.setUserLocation: options")) else null
-                plugin.setUserLocation(lngLat, options, Reply<Unit, MapViewCode>(settle) { null })
+                val a0 = if (0 < n && !r.isNull()) (r.tuple(2) {
+                    val v0_0 = r.f64() ?: return@tuple null
+                    val v0_1 = r.f64() ?: return@tuple null
+                    Pair(v0_0, v0_1)
+                } ?: return settle.reject("bad arguments — MapView.setUserLocation: lngLat")) else { if (0 < n) r.skip(); null }
+                val a1 = if (1 < n && !r.isNull()) (MapUserLocationOptions.read(r) ?: return settle.reject("bad arguments — MapView.setUserLocation: options")) else { if (1 < n) r.skip(); null }
+                plugin.setUserLocation(a0, a1, Reply<Unit, MapViewCode>(settle, null))
             }
             else -> settle.reject("Unknown method: $method")
         }

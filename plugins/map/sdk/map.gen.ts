@@ -15,38 +15,38 @@ export const VERSION = 1
  *  layers draw, only data flows); otherwise the half creates it with the default layers of `kind`.
  *  Rejects with "notReady". */
 export const ensureLayer = (view: ViewChannel<MapEvents>, source: string, kind: MapLayerKind, options?: MapLayerOptions): Promise<void> =>
-  view._call("ensureLayer", [source, kind, options], 1, true)
+  view._call("ensureLayer", [source, kind, options])
 
 export const removeLayer = (view: ViewChannel<MapEvents>, source: string): Promise<void> =>
-  view._call("removeLayer", [source], 1, true)
+  view._call("removeLayer", [source])
 
 /** Replace the data of a GeoJSON source: a Feature or a FeatureCollection.
  *  Rejects with "notReady". */
 export const setData = (view: ViewChannel<MapEvents>, source: string, geojson: Json): Promise<void> =>
-  view._call("setData", [source, geojson], 1, true)
+  view._call("setData", [source, geojson])
 
 export const flyTo = (view: ViewChannel<MapEvents>, center: LngLat, options?: MapCameraMove): Promise<void> =>
-  view._call("flyTo", [center, options], 1, true)
+  view._call("flyTo", [center, options])
 
 export const jumpTo = (view: ViewChannel<MapEvents>, center: LngLat, options?: MapCameraMove): Promise<void> =>
-  view._call("jumpTo", [center, options], 1, true)
+  view._call("jumpTo", [center, options])
 
 /** Fit the camera to the points.
  *  Rejects with "noPoints". */
 export const fitPoints = (view: ViewChannel<MapEvents>, points: LngLat[], options?: MapFitOptions): Promise<void> =>
-  view._call("fitPoints", [points, options], 1, true)
+  view._call("fitPoints", [points, options])
 
 /** The part of the view covered by the app's UI; camera moves center inside the rest. */
 export const setPadding = (view: ViewChannel<MapEvents>, padding: MapPadding): Promise<void> =>
-  view._call("setPadding", [padding], 1, true)
+  view._call("setPadding", [padding])
 
 /** Rejects with "notReady". */
 export const getCamera = (view: ViewChannel<MapEvents>): Promise<MapCamera> =>
-  view._call("getCamera", [], 1, true)
+  view._call("getCamera", [])
 
 /** Move the user puck; null hides it. */
 export const setUserLocation = (view: ViewChannel<MapEvents>, lngLat: LngLat | null, options?: MapUserLocationOptions): Promise<void> =>
-  view._call("setUserLocation", [lngLat, options], 1, true)
+  view._call("setUserLocation", [lngLat, options])
 
 // ---- what the host's half has --------------------------------------------------------------------
 

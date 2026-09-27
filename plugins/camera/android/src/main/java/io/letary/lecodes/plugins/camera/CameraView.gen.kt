@@ -11,8 +11,8 @@ import io.letary.lecodes.services.PluginEmit
 import io.letary.lecodes.services.PluginFile
 import io.letary.lecodes.services.Reply
 import io.letary.lecodes.services.Wire
-import org.json.JSONArray
-import org.json.JSONObject
+import io.letary.lecodes.core.PackedReader
+import io.letary.lecodes.core.PackedWriter
 
 // ---- The contract's types ----
 
@@ -21,7 +21,7 @@ enum class Facing(val wire: String) {
     BACK("back");
 
     companion object {
-        internal fun fromWire(wire: Any?): Facing? = values().firstOrNull { it.wire == wire }
+        internal fun read(r: PackedReader): Facing? = r.string()?.let { s -> values().firstOrNull { it.wire == s } }
     }
 }
 
@@ -30,10 +30,17 @@ data class CameraParams(
     val facingMode: Facing? = null,
 ) {
     companion object {
-        internal fun fromWire(wire: Any?): CameraParams? {
-            val o = Wire.obj(wire) ?: return null
-            val facingMode = if (Wire.present(o.opt("facingMode"))) (Facing.fromWire(o.opt("facingMode")) ?: return null) else null
-            return CameraParams(facingMode = facingMode)
+        internal fun read(r: PackedReader): CameraParams? {
+            val n = r.beginObject()
+            if (n < 0) return null
+            var m0: Facing? = null
+            repeat(n) {
+                when (r.key()) {
+                    "facingMode" -> if (r.isNull()) r.skip() else m0 = Facing.read(r) ?: return null
+                    else -> r.skip()
+                }
+            }
+            return CameraParams(facingMode = m0)
         }
     }
 }
@@ -49,9 +56,11 @@ enum class CameraViewCode(override val code: String) : PluginCode {
 class CameraViewEvents(private val channel: PluginEmit) {
     /** The preview could not start or stopped (no camera, the stream was refused). */
     fun error(message: String) {
-        val o = JSONObject()
-        o.put("message", message)
-        channel.emit("error", o)
+        val w = PackedWriter()
+        w.beginObject()
+        w.key("message"); w.string(message)
+        w.end()
+        this.channel.emit("error", w.bytes())
     }
 }
 
@@ -88,22 +97,23 @@ object CameraViewChannel {
     /** Register the view: `make` builds one instance from its params. */
     fun register(engine: LecodesEngine, make: (params: CameraParams, events: CameraViewEvents) -> CameraViewPlugin) {
         engine.registerView(NAME, VERSION) { params, channel ->
-            val plugin = make(CameraParams.fromWire(params) ?: CameraParams(), CameraViewEvents { event, data -> channel.emitValue(event, data) })
-            NativeViews.Instance(plugin.view, onCall = { call -> CameraViewGlue.call(plugin, call.method, call.args, call) }, onDestroy = { plugin.destroy() })
+            val plugin = make(CameraParams.read(Wire.reader(params)) ?: CameraParams(), CameraViewEvents { event, packed -> channel.emitPacked(event, packed) })
+            NativeViews.Instance(plugin.view, onCall = { call -> CameraViewGlue.call(plugin, call.method, call.reader(), call) }, onDestroy = { plugin.destroy() })
         }
     }
 }
 
 /** Reads a call off the wire and hands it to the plugin; a malformed call never reaches it. */
 internal object CameraViewGlue {
-    fun call(plugin: CameraViewPlugin, method: String, args: JSONArray, settle: ChannelSettle) {
+    fun call(plugin: CameraViewPlugin, method: String, r: PackedReader, settle: ChannelSettle) {
+        val n = r.beginArray()   // the arguments, in their order
         when (method) {
             "takePhoto" -> {
-                plugin.takePhoto(Reply<PluginFile, CameraViewCode>(settle) { v -> v.wire })
+                plugin.takePhoto(Reply<PluginFile, CameraViewCode>(settle) { v, w -> v.write(w) })
             }
             "setFacingMode" -> {
-                val mode = Facing.fromWire(args.opt(0)) ?: return settle.reject("bad arguments — CameraView.setFacingMode: mode")
-                plugin.setFacingMode(mode, Reply<Unit, CameraViewCode>(settle) { null })
+                val a0 = (if (0 < n) Facing.read(r) else null) ?: return settle.reject("bad arguments — CameraView.setFacingMode: mode")
+                plugin.setFacingMode(a0, Reply<Unit, CameraViewCode>(settle, null))
             }
             else -> settle.reject("Unknown method: $method")
         }

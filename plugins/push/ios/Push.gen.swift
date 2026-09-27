@@ -9,8 +9,8 @@ import LeCodes
 public struct PushParams {
     public init() {}
 
-    init?(wire: Any?) {
-        guard wire == nil || wire is NSNull || Wire.object(wire) != nil else { return nil }
+    init?(wire: WireIn) {
+        guard !wire.isPresent || wire.isObject else { return nil }
     }
 }
 
@@ -31,11 +31,11 @@ public struct PushStatus {
         self.registered = registered
     }
 
-    var wire: Any {
-        var o: [String: Any] = [:]
-        o["permission"] = permission.rawValue
-        o["registered"] = registered
-        return o
+    func write(to w: WireOut) {
+        w.beginObject(2)
+        w.key("permission"); w.string(self.permission.rawValue)
+        w.key("registered"); w.bool(self.registered)
+        w.end()
     }
 }
 
@@ -48,12 +48,15 @@ public struct PushRegisterOptions {
         self.user = user
     }
 
-    init?(wire: Any?) {
-        guard let o = Wire.object(wire) else { return nil }
-        if Wire.present(o["user"]) {
-            guard let user = Wire.string(o["user"]) else { return nil }
-            self.user = user
-        } else { self.user = nil }
+    init?(wire: WireIn) {
+        guard wire.isObject else { return nil }
+        let m0 = wire["user", 0]
+        if m0.isPresent {
+            guard let v = m0.string else { return nil }
+            self.user = v
+        } else {
+            self.user = nil
+        }
     }
 }
 
@@ -64,10 +67,10 @@ public struct PushRegistration {
         self.address = address
     }
 
-    var wire: Any {
-        var o: [String: Any] = [:]
-        o["address"] = address
-        return o
+    func write(to w: WireOut) {
+        w.beginObject(1)
+        w.key("address"); w.string(self.address)
+        w.end()
     }
 }
 
@@ -89,14 +92,22 @@ public struct PushPayload {
         self.badge = badge
     }
 
-    var wire: Any {
-        var o: [String: Any] = [:]
-        o["title"] = title
-        if let v = body { o["body"] = v }
-        if let v = url { o["url"] = v }
-        if let v = data { o["data"] = v.mapValues({ v1 -> Any in v1 }) }
-        if let v = badge { o["badge"] = v }
-        return o
+    func write(to w: WireOut) {
+        w.beginObject(5)
+        w.key("title"); w.string(self.title)
+        if let v = self.body { w.key("body"); w.string(v) }
+        if let v = self.url { w.key("url"); w.string(v) }
+        if let v = self.data {
+            w.key("data")
+            w.beginObject(v.count)
+            for (k1, v1) in v {
+                w.name(k1)
+                w.json(v1)
+            }
+            w.end()
+        }
+        if let v = self.badge { w.key("badge"); w.i32(v) }
+        w.end()
     }
 }
 
@@ -113,10 +124,14 @@ public struct PushEvents {
     let channel: ServiceChannel
 
     /// Arrived while this app was in the foreground (the host shows no banner).
-    public func message(_ payload: PushPayload) { channel.emit("message", payload.wire) }
+    public func message(_ payload: PushPayload) {
+        channel.emit("message") { w in payload.write(to: w) }
+    }
 
     /// Tapped while the world was alive.
-    public func tap(_ payload: PushPayload) { channel.emit("tap", payload.wire) }
+    public func tap(_ payload: PushPayload) {
+        channel.emit("tap") { w in payload.write(to: w) }
+    }
 }
 
 /// The service "push".
@@ -152,33 +167,33 @@ public enum PushChannel {
     /// no I/O: that belongs to the first call that needs it.
     public static func register(in engine: LeCodesEngine, _ make: @escaping (PushParams, PushEvents) -> PushPlugin) {
         engine.registerService(name, version: Int32(version)) { params, channel in
-            PushGlue(make(PushParams(wire: params) ?? PushParams(), PushEvents(channel: channel)))
+            PushGlue(make(WireIn.of(params, { PushParams(wire: $0) }) ?? PushParams(), PushEvents(channel: channel)))
         }
     }
 }
 
 /// Reads a call off the wire and hands it to the plugin; a malformed call never reaches it.
-final class PushGlue: ServiceInstance {
+final class PushGlue: WireServiceInstance {
     private let plugin: PushPlugin
 
     init(_ plugin: PushPlugin) { self.plugin = plugin }
 
-    func call(_ method: String, _ args: [Any], _ settle: ChannelSettle) {
+    func call(_ method: String, wire args: WireIn, _ settle: ChannelSettle) {
         switch method {
         case "getStatus":
-            plugin.getStatus(Reply<PushStatus, PushCode>(settle) { v in v.wire })
+            plugin.getStatus(Reply<PushStatus, PushCode>(settle) { v, w in v.write(to: w) })
         case "register":
-            let a0: Any? = args.count > 0 ? args[0] : nil
-            var options: PushRegisterOptions? = nil
-            if Wire.present(a0) {
-                guard let v = PushRegisterOptions(wire: a0) else { return settle.reject("bad arguments — Push.register: options") }
-                options = v
+            let w0 = args[0]
+            var a0: PushRegisterOptions? = nil
+            if w0.isPresent {
+                guard let v = PushRegisterOptions(wire: w0) else { return settle.reject("bad arguments — Push.register: options") }
+                a0 = v
             }
-            plugin.register(options, Reply<PushRegistration, PushCode>(settle) { v in v.wire })
+            plugin.register(a0, Reply<PushRegistration, PushCode>(settle) { v, w in v.write(to: w) })
         case "unregister":
-            plugin.unregister(Reply<Void, PushCode>(settle) { _ in nil })
+            plugin.unregister(Reply<Void, PushCode>(settle))
         case "getLaunch":
-            plugin.getLaunch(Reply<PushPayload?, PushCode>(settle) { v in v.map({ v1 -> Any in v1.wire }) })
+            plugin.getLaunch(Reply<PushPayload?, PushCode>(settle) { v, w in if let v1 = v { v1.write(to: w) } })
         default:
             settle.reject("Unknown method: \(method)")
         }

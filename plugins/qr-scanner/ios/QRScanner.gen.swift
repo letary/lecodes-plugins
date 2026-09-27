@@ -10,8 +10,8 @@ import LeCodes
 public struct QRScannerParams {
     public init() {}
 
-    init?(wire: Any?) {
-        guard wire == nil || wire is NSNull || Wire.object(wire) != nil else { return nil }
+    init?(wire: WireIn) {
+        guard !wire.isPresent || wire.isObject else { return nil }
     }
 }
 
@@ -24,9 +24,12 @@ public struct QRScannerEvents {
     /// One per decoded camera frame: the payload, or null for a frame with no readable code (it
     /// repeats while the user aims). The same code may be reported more than once.
     public func scan(data: String? = nil) {
-        var o: [String: Any] = [:]
-        if let v = data { o["data"] = v } else { o["data"] = NSNull() }
-        channel.emit("scan", o)
+        self.channel.emit("scan") { w in
+            w.beginObject(1)
+            w.key("data")
+            if let v0 = data { w.string(v0) } else { w.null() }
+            w.end()
+        }
     }
 }
 
@@ -54,20 +57,20 @@ public enum QRScannerChannel {
     /// Register the view: `make` builds one instance from its params.
     public static func register(in engine: LeCodesEngine, _ make: @escaping (QRScannerParams, QRScannerEvents) -> QRScannerPlugin) {
         engine.registerView(name, version: Int32(version)) { params, channel in
-            QRScannerGlue(make(QRScannerParams(wire: params) ?? QRScannerParams(), QRScannerEvents(channel: channel)))
+            QRScannerGlue(make(WireIn.of(params, { QRScannerParams(wire: $0) }) ?? QRScannerParams(), QRScannerEvents(channel: channel)))
         }
     }
 }
 
 /// Reads a call off the wire and hands it to the plugin; a malformed call never reaches it.
-final class QRScannerGlue: NativeViewInstance {
+final class QRScannerGlue: WireNativeViewInstance {
     private let plugin: QRScannerPlugin
 
     init(_ plugin: QRScannerPlugin) { self.plugin = plugin }
 
     var view: UIView { plugin.view }
 
-    func call(_ method: String, _ args: [Any], _ settle: ChannelSettle) {
+    func call(_ method: String, wire args: WireIn, _ settle: ChannelSettle) {
         switch method {
         default:
             settle.reject("Unknown method: \(method)")

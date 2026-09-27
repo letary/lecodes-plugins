@@ -40,48 +40,81 @@ public struct MapParams {
         self.tilt = tilt
     }
 
-    init?(wire: Any?) {
-        guard let o = Wire.object(wire) else { return nil }
-        if Wire.present(o["style"]) {
-            guard let style = Wire.string(o["style"]) else { return nil }
-            self.style = style
-        } else { self.style = nil }
-        if Wire.present(o["styleJson"]) {
-            guard let styleJson = Wire.string(o["styleJson"]) else { return nil }
-            self.styleJson = styleJson
-        } else { self.styleJson = nil }
-        if Wire.present(o["center"]) {
-            guard let center = Wire.array(o["center"], 2).flatMap({ v0 -> (Double, Double)? in guard let v0_0 = Wire.f64(v0[0]), let v0_1 = Wire.f64(v0[1]) else { return nil }; return (v0_0, v0_1) }) else { return nil }
-            self.center = center
-        } else { self.center = nil }
-        if Wire.present(o["zoom"]) {
-            guard let zoom = Wire.f64(o["zoom"]) else { return nil }
-            self.zoom = zoom
-        } else { self.zoom = nil }
-        if Wire.present(o["minZoom"]) {
-            guard let minZoom = Wire.f64(o["minZoom"]) else { return nil }
-            self.minZoom = minZoom
-        } else { self.minZoom = nil }
-        if Wire.present(o["maxZoom"]) {
-            guard let maxZoom = Wire.f64(o["maxZoom"]) else { return nil }
-            self.maxZoom = maxZoom
-        } else { self.maxZoom = nil }
-        if Wire.present(o["bearing"]) {
-            guard let bearing = Wire.f64(o["bearing"]) else { return nil }
-            self.bearing = bearing
-        } else { self.bearing = nil }
-        if Wire.present(o["pitch"]) {
-            guard let pitch = Wire.f64(o["pitch"]) else { return nil }
-            self.pitch = pitch
-        } else { self.pitch = nil }
-        if Wire.present(o["rotate"]) {
-            guard let rotate = Wire.bool(o["rotate"]) else { return nil }
-            self.rotate = rotate
-        } else { self.rotate = nil }
-        if Wire.present(o["tilt"]) {
-            guard let tilt = Wire.bool(o["tilt"]) else { return nil }
-            self.tilt = tilt
-        } else { self.tilt = nil }
+    init?(wire: WireIn) {
+        guard wire.isObject else { return nil }
+        let m0 = wire["style", 0]
+        if m0.isPresent {
+            guard let v = m0.string else { return nil }
+            self.style = v
+        } else {
+            self.style = nil
+        }
+        let m1 = wire["styleJson", 1]
+        if m1.isPresent {
+            guard let v = m1.string else { return nil }
+            self.styleJson = v
+        } else {
+            self.styleJson = nil
+        }
+        let m2 = wire["center", 2]
+        if m2.isPresent {
+            guard let v = m2.tuple(2).flatMap({ v0 -> (Double, Double)? in
+                guard let v0_0 = v0[0].f64, let v0_1 = v0[1].f64 else { return nil }
+                return (v0_0, v0_1)
+            }) else { return nil }
+            self.center = v
+        } else {
+            self.center = nil
+        }
+        let m3 = wire["zoom", 3]
+        if m3.isPresent {
+            guard let v = m3.f64 else { return nil }
+            self.zoom = v
+        } else {
+            self.zoom = nil
+        }
+        let m4 = wire["minZoom", 4]
+        if m4.isPresent {
+            guard let v = m4.f64 else { return nil }
+            self.minZoom = v
+        } else {
+            self.minZoom = nil
+        }
+        let m5 = wire["maxZoom", 5]
+        if m5.isPresent {
+            guard let v = m5.f64 else { return nil }
+            self.maxZoom = v
+        } else {
+            self.maxZoom = nil
+        }
+        let m6 = wire["bearing", 6]
+        if m6.isPresent {
+            guard let v = m6.f64 else { return nil }
+            self.bearing = v
+        } else {
+            self.bearing = nil
+        }
+        let m7 = wire["pitch", 7]
+        if m7.isPresent {
+            guard let v = m7.f64 else { return nil }
+            self.pitch = v
+        } else {
+            self.pitch = nil
+        }
+        let m8 = wire["rotate", 8]
+        if m8.isPresent {
+            guard let v = m8.bool else { return nil }
+            self.rotate = v
+        } else {
+            self.rotate = nil
+        }
+        let m9 = wire["tilt", 9]
+        if m9.isPresent {
+            guard let v = m9.bool else { return nil }
+            self.tilt = v
+        } else {
+            self.tilt = nil
+        }
     }
 }
 
@@ -89,8 +122,8 @@ public enum MapLayerKind: String {
     case markers
     case line
 
-    init?(wire: Any?) {
-        guard let raw = Wire.string(wire), let value = MapLayerKind(rawValue: raw) else { return nil }
+    init?(wire: WireIn) {
+        guard let raw = wire.string, let value = MapLayerKind(rawValue: raw) else { return nil }
         self = value
     }
 }
@@ -119,32 +152,50 @@ public struct MapLayerOptions {
         self.opacity = opacity
     }
 
-    init?(wire: Any?) {
-        guard let o = Wire.object(wire) else { return nil }
-        if Wire.present(o["cluster"]) {
-            guard let cluster = Wire.bool(o["cluster"]) else { return nil }
-            self.cluster = cluster
-        } else { self.cluster = nil }
-        if Wire.present(o["clusterRadius"]) {
-            guard let clusterRadius = Wire.f64(o["clusterRadius"]) else { return nil }
-            self.clusterRadius = clusterRadius
-        } else { self.clusterRadius = nil }
-        if Wire.present(o["clusterMaxZoom"]) {
-            guard let clusterMaxZoom = Wire.f64(o["clusterMaxZoom"]) else { return nil }
-            self.clusterMaxZoom = clusterMaxZoom
-        } else { self.clusterMaxZoom = nil }
-        if Wire.present(o["color"]) {
-            guard let color = Wire.string(o["color"]) else { return nil }
-            self.color = color
-        } else { self.color = nil }
-        if Wire.present(o["width"]) {
-            guard let width = Wire.f64(o["width"]) else { return nil }
-            self.width = width
-        } else { self.width = nil }
-        if Wire.present(o["opacity"]) {
-            guard let opacity = Wire.f64(o["opacity"]) else { return nil }
-            self.opacity = opacity
-        } else { self.opacity = nil }
+    init?(wire: WireIn) {
+        guard wire.isObject else { return nil }
+        let m0 = wire["cluster", 0]
+        if m0.isPresent {
+            guard let v = m0.bool else { return nil }
+            self.cluster = v
+        } else {
+            self.cluster = nil
+        }
+        let m1 = wire["clusterRadius", 1]
+        if m1.isPresent {
+            guard let v = m1.f64 else { return nil }
+            self.clusterRadius = v
+        } else {
+            self.clusterRadius = nil
+        }
+        let m2 = wire["clusterMaxZoom", 2]
+        if m2.isPresent {
+            guard let v = m2.f64 else { return nil }
+            self.clusterMaxZoom = v
+        } else {
+            self.clusterMaxZoom = nil
+        }
+        let m3 = wire["color", 3]
+        if m3.isPresent {
+            guard let v = m3.string else { return nil }
+            self.color = v
+        } else {
+            self.color = nil
+        }
+        let m4 = wire["width", 4]
+        if m4.isPresent {
+            guard let v = m4.f64 else { return nil }
+            self.width = v
+        } else {
+            self.width = nil
+        }
+        let m5 = wire["opacity", 5]
+        if m5.isPresent {
+            guard let v = m5.f64 else { return nil }
+            self.opacity = v
+        } else {
+            self.opacity = nil
+        }
     }
 }
 
@@ -162,24 +213,36 @@ public struct MapCameraMove {
         self.duration = duration
     }
 
-    init?(wire: Any?) {
-        guard let o = Wire.object(wire) else { return nil }
-        if Wire.present(o["zoom"]) {
-            guard let zoom = Wire.f64(o["zoom"]) else { return nil }
-            self.zoom = zoom
-        } else { self.zoom = nil }
-        if Wire.present(o["bearing"]) {
-            guard let bearing = Wire.f64(o["bearing"]) else { return nil }
-            self.bearing = bearing
-        } else { self.bearing = nil }
-        if Wire.present(o["pitch"]) {
-            guard let pitch = Wire.f64(o["pitch"]) else { return nil }
-            self.pitch = pitch
-        } else { self.pitch = nil }
-        if Wire.present(o["duration"]) {
-            guard let duration = Wire.f64(o["duration"]) else { return nil }
-            self.duration = duration
-        } else { self.duration = nil }
+    init?(wire: WireIn) {
+        guard wire.isObject else { return nil }
+        let m0 = wire["zoom", 0]
+        if m0.isPresent {
+            guard let v = m0.f64 else { return nil }
+            self.zoom = v
+        } else {
+            self.zoom = nil
+        }
+        let m1 = wire["bearing", 1]
+        if m1.isPresent {
+            guard let v = m1.f64 else { return nil }
+            self.bearing = v
+        } else {
+            self.bearing = nil
+        }
+        let m2 = wire["pitch", 2]
+        if m2.isPresent {
+            guard let v = m2.f64 else { return nil }
+            self.pitch = v
+        } else {
+            self.pitch = nil
+        }
+        let m3 = wire["duration", 3]
+        if m3.isPresent {
+            guard let v = m3.f64 else { return nil }
+            self.duration = v
+        } else {
+            self.duration = nil
+        }
     }
 }
 
@@ -188,9 +251,15 @@ public enum MapInset {
     case number(Double)
     case string(String)
 
-    init?(wire: Any?) {
-        if let v = Wire.f64(wire) { self = .number(v); return }
-        if let v = Wire.string(wire) { self = .string(v); return }
+    init?(wire: WireIn) {
+        if let v = wire.f64 {
+            self = .number(v)
+            return
+        }
+        if let v = wire.string {
+            self = .string(v)
+            return
+        }
         return nil
     }
 }
@@ -208,24 +277,36 @@ public struct MapPadding {
         self.right = right
     }
 
-    init?(wire: Any?) {
-        guard let o = Wire.object(wire) else { return nil }
-        if Wire.present(o["top"]) {
-            guard let top = MapInset(wire: o["top"]) else { return nil }
-            self.top = top
-        } else { self.top = nil }
-        if Wire.present(o["left"]) {
-            guard let left = MapInset(wire: o["left"]) else { return nil }
-            self.left = left
-        } else { self.left = nil }
-        if Wire.present(o["bottom"]) {
-            guard let bottom = MapInset(wire: o["bottom"]) else { return nil }
-            self.bottom = bottom
-        } else { self.bottom = nil }
-        if Wire.present(o["right"]) {
-            guard let right = MapInset(wire: o["right"]) else { return nil }
-            self.right = right
-        } else { self.right = nil }
+    init?(wire: WireIn) {
+        guard wire.isObject else { return nil }
+        let m0 = wire["top", 0]
+        if m0.isPresent {
+            guard let v = MapInset(wire: m0) else { return nil }
+            self.top = v
+        } else {
+            self.top = nil
+        }
+        let m1 = wire["left", 1]
+        if m1.isPresent {
+            guard let v = MapInset(wire: m1) else { return nil }
+            self.left = v
+        } else {
+            self.left = nil
+        }
+        let m2 = wire["bottom", 2]
+        if m2.isPresent {
+            guard let v = MapInset(wire: m2) else { return nil }
+            self.bottom = v
+        } else {
+            self.bottom = nil
+        }
+        let m3 = wire["right", 3]
+        if m3.isPresent {
+            guard let v = MapInset(wire: m3) else { return nil }
+            self.right = v
+        } else {
+            self.right = nil
+        }
     }
 }
 
@@ -233,9 +314,15 @@ public enum MapFitOptionsPadding {
     case number(Double)
     case mapPadding(MapPadding)
 
-    init?(wire: Any?) {
-        if let v = Wire.f64(wire) { self = .number(v); return }
-        if let v = MapPadding(wire: wire) { self = .mapPadding(v); return }
+    init?(wire: WireIn) {
+        if let v = wire.f64 {
+            self = .number(v)
+            return
+        }
+        if let v = MapPadding(wire: wire) {
+            self = .mapPadding(v)
+            return
+        }
         return nil
     }
 }
@@ -254,20 +341,29 @@ public struct MapFitOptions {
         self.animate = animate
     }
 
-    init?(wire: Any?) {
-        guard let o = Wire.object(wire) else { return nil }
-        if Wire.present(o["padding"]) {
-            guard let padding = MapFitOptionsPadding(wire: o["padding"]) else { return nil }
-            self.padding = padding
-        } else { self.padding = nil }
-        if Wire.present(o["maxZoom"]) {
-            guard let maxZoom = Wire.f64(o["maxZoom"]) else { return nil }
-            self.maxZoom = maxZoom
-        } else { self.maxZoom = nil }
-        if Wire.present(o["animate"]) {
-            guard let animate = Wire.bool(o["animate"]) else { return nil }
-            self.animate = animate
-        } else { self.animate = nil }
+    init?(wire: WireIn) {
+        guard wire.isObject else { return nil }
+        let m0 = wire["padding", 0]
+        if m0.isPresent {
+            guard let v = MapFitOptionsPadding(wire: m0) else { return nil }
+            self.padding = v
+        } else {
+            self.padding = nil
+        }
+        let m1 = wire["maxZoom", 1]
+        if m1.isPresent {
+            guard let v = m1.f64 else { return nil }
+            self.maxZoom = v
+        } else {
+            self.maxZoom = nil
+        }
+        let m2 = wire["animate", 2]
+        if m2.isPresent {
+            guard let v = m2.bool else { return nil }
+            self.animate = v
+        } else {
+            self.animate = nil
+        }
     }
 }
 
@@ -284,13 +380,17 @@ public struct MapCamera {
         self.pitch = pitch
     }
 
-    var wire: Any {
-        var o: [String: Any] = [:]
-        o["center"] = [Wire.number(center.0), Wire.number(center.1)] as [Any]
-        o["zoom"] = Wire.number(zoom)
-        o["bearing"] = Wire.number(bearing)
-        o["pitch"] = Wire.number(pitch)
-        return o
+    func write(to w: WireOut) {
+        w.beginObject(4)
+        w.key("center")
+        w.beginArray(2)
+        w.f64(self.center.0)
+        w.f64(self.center.1)
+        w.end()
+        w.key("zoom"); w.f64(self.zoom)
+        w.key("bearing"); w.f64(self.bearing)
+        w.key("pitch"); w.f64(self.pitch)
+        w.end()
     }
 }
 
@@ -305,16 +405,22 @@ public struct MapUserLocationOptions {
         self.heading = heading
     }
 
-    init?(wire: Any?) {
-        guard let o = Wire.object(wire) else { return nil }
-        if Wire.present(o["accuracy"]) {
-            guard let accuracy = Wire.f64(o["accuracy"]) else { return nil }
-            self.accuracy = accuracy
-        } else { self.accuracy = nil }
-        if Wire.present(o["heading"]) {
-            guard let heading = Wire.f64(o["heading"]) else { return nil }
-            self.heading = heading
-        } else { self.heading = nil }
+    init?(wire: WireIn) {
+        guard wire.isObject else { return nil }
+        let m0 = wire["accuracy", 0]
+        if m0.isPresent {
+            guard let v = m0.f64 else { return nil }
+            self.accuracy = v
+        } else {
+            self.accuracy = nil
+        }
+        let m1 = wire["heading", 1]
+        if m1.isPresent {
+            guard let v = m1.f64 else { return nil }
+            self.heading = v
+        } else {
+            self.heading = nil
+        }
     }
 }
 
@@ -322,10 +428,10 @@ public enum MapFeatureId {
     case string(String)
     case number(Double)
 
-    var wire: Any {
+    func write(to w: WireOut) {
         switch self {
-        case .string(let v): return v
-        case .number(let v): return Wire.number(v)
+        case .string(let v): w.string(v)
+        case .number(let v): w.f64(v)
         }
     }
 }
@@ -343,12 +449,19 @@ public struct MapFeature {
         self.properties = properties
     }
 
-    var wire: Any {
-        var o: [String: Any] = [:]
-        o["source"] = source
-        if let v = id { o["id"] = v.wire } else { o["id"] = NSNull() }
-        o["properties"] = properties.mapValues({ v0 -> Any in v0 })
-        return o
+    func write(to w: WireOut) {
+        w.beginObject(3)
+        w.key("source"); w.string(self.source)
+        w.key("id")
+        if let v0 = self.id { v0.write(to: w) } else { w.null() }
+        w.key("properties")
+        w.beginObject(self.properties.count)
+        for (k0, v0) in self.properties {
+            w.name(k0)
+            w.json(v0)
+        }
+        w.end()
+        w.end()
     }
 }
 
@@ -366,12 +479,20 @@ public struct MapTap {
         self.feature = feature
     }
 
-    var wire: Any {
-        var o: [String: Any] = [:]
-        o["lngLat"] = [Wire.number(lngLat.0), Wire.number(lngLat.1)] as [Any]
-        o["point"] = [Wire.number(point.0), Wire.number(point.1)] as [Any]
-        if let v = feature { o["feature"] = v.wire }
-        return o
+    func write(to w: WireOut) {
+        w.beginObject(3)
+        w.key("lngLat")
+        w.beginArray(2)
+        w.f64(self.lngLat.0)
+        w.f64(self.lngLat.1)
+        w.end()
+        w.key("point")
+        w.beginArray(2)
+        w.f64(self.point.0)
+        w.f64(self.point.1)
+        w.end()
+        if let v = self.feature { w.key("feature"); v.write(to: w) }
+        w.end()
     }
 }
 
@@ -390,16 +511,22 @@ public struct MapViewEvents {
     /// The style loaded and the map takes calls. Fires again after every style reload.
     public func ready() { channel.emit("ready") }
 
-    public func tap(_ payload: MapTap) { channel.emit("tap", payload.wire) }
+    public func tap(_ payload: MapTap) {
+        channel.emit("tap") { w in payload.write(to: w) }
+    }
 
     /// The camera settled after a gesture or an animation.
-    public func moveEnd(_ payload: MapCamera) { channel.emit("moveEnd", payload.wire) }
+    public func moveEnd(_ payload: MapCamera) {
+        channel.emit("moveEnd") { w in payload.write(to: w) }
+    }
 
     /// A problem that is never fatal: a style that would not load, a source out of reach.
     public func error(message: String) {
-        var o: [String: Any] = [:]
-        o["message"] = message
-        channel.emit("error", o)
+        self.channel.emit("error") { w in
+            w.beginObject(1)
+            w.key("message"); w.string(message)
+            w.end()
+        }
     }
 }
 
@@ -447,84 +574,98 @@ public enum MapViewChannel {
     /// Register the view: `make` builds one instance from its params.
     public static func register(in engine: LeCodesEngine, _ make: @escaping (MapParams, MapViewEvents) -> MapViewPlugin) {
         engine.registerView(name, version: Int32(version)) { params, channel in
-            MapViewGlue(make(MapParams(wire: params) ?? MapParams(), MapViewEvents(channel: channel)))
+            MapViewGlue(make(WireIn.of(params, { MapParams(wire: $0) }) ?? MapParams(), MapViewEvents(channel: channel)))
         }
     }
 }
 
 /// Reads a call off the wire and hands it to the plugin; a malformed call never reaches it.
-final class MapViewGlue: NativeViewInstance {
+final class MapViewGlue: WireNativeViewInstance {
     private let plugin: MapViewPlugin
 
     init(_ plugin: MapViewPlugin) { self.plugin = plugin }
 
     var view: UIView { plugin.view }
 
-    func call(_ method: String, _ args: [Any], _ settle: ChannelSettle) {
+    func call(_ method: String, wire args: WireIn, _ settle: ChannelSettle) {
         switch method {
         case "ensureLayer":
-            guard let source = Wire.string((args.count > 0 ? args[0] : nil)) else { return settle.reject("bad arguments — MapView.ensureLayer: source") }
-            guard let kind = MapLayerKind(wire: (args.count > 1 ? args[1] : nil)) else { return settle.reject("bad arguments — MapView.ensureLayer: kind") }
-            let a2: Any? = args.count > 2 ? args[2] : nil
-            var options: MapLayerOptions? = nil
-            if Wire.present(a2) {
-                guard let v = MapLayerOptions(wire: a2) else { return settle.reject("bad arguments — MapView.ensureLayer: options") }
-                options = v
+            guard let a0 = args[0].string else { return settle.reject("bad arguments — MapView.ensureLayer: source") }
+            guard let a1 = MapLayerKind(wire: args[1]) else { return settle.reject("bad arguments — MapView.ensureLayer: kind") }
+            let w2 = args[2]
+            var a2: MapLayerOptions? = nil
+            if w2.isPresent {
+                guard let v = MapLayerOptions(wire: w2) else { return settle.reject("bad arguments — MapView.ensureLayer: options") }
+                a2 = v
             }
-            plugin.ensureLayer(source, kind, options, Reply<Void, MapViewCode>(settle) { _ in nil })
+            plugin.ensureLayer(a0, a1, a2, Reply<Void, MapViewCode>(settle))
         case "removeLayer":
-            guard let source = Wire.string((args.count > 0 ? args[0] : nil)) else { return settle.reject("bad arguments — MapView.removeLayer: source") }
-            plugin.removeLayer(source, Reply<Void, MapViewCode>(settle) { _ in nil })
+            guard let a0 = args[0].string else { return settle.reject("bad arguments — MapView.removeLayer: source") }
+            plugin.removeLayer(a0, Reply<Void, MapViewCode>(settle))
         case "setData":
-            guard let source = Wire.string((args.count > 0 ? args[0] : nil)) else { return settle.reject("bad arguments — MapView.setData: source") }
-            guard let geojson = Wire.json((args.count > 1 ? args[1] : nil)) else { return settle.reject("bad arguments — MapView.setData: geojson") }
-            plugin.setData(source, geojson, Reply<Void, MapViewCode>(settle) { _ in nil })
+            guard let a0 = args[0].string else { return settle.reject("bad arguments — MapView.setData: source") }
+            guard let a1 = args[1].json else { return settle.reject("bad arguments — MapView.setData: geojson") }
+            plugin.setData(a0, a1, Reply<Void, MapViewCode>(settle))
         case "flyTo":
-            guard let center = Wire.array((args.count > 0 ? args[0] : nil), 2).flatMap({ v0 -> (Double, Double)? in guard let v0_0 = Wire.f64(v0[0]), let v0_1 = Wire.f64(v0[1]) else { return nil }; return (v0_0, v0_1) }) else { return settle.reject("bad arguments — MapView.flyTo: center") }
-            let a1: Any? = args.count > 1 ? args[1] : nil
-            var options: MapCameraMove? = nil
-            if Wire.present(a1) {
-                guard let v = MapCameraMove(wire: a1) else { return settle.reject("bad arguments — MapView.flyTo: options") }
-                options = v
+            guard let a0 = args[0].tuple(2).flatMap({ v0 -> (Double, Double)? in
+                guard let v0_0 = v0[0].f64, let v0_1 = v0[1].f64 else { return nil }
+                return (v0_0, v0_1)
+            }) else { return settle.reject("bad arguments — MapView.flyTo: center") }
+            let w1 = args[1]
+            var a1: MapCameraMove? = nil
+            if w1.isPresent {
+                guard let v = MapCameraMove(wire: w1) else { return settle.reject("bad arguments — MapView.flyTo: options") }
+                a1 = v
             }
-            plugin.flyTo(center, options, Reply<Void, MapViewCode>(settle) { _ in nil })
+            plugin.flyTo(a0, a1, Reply<Void, MapViewCode>(settle))
         case "jumpTo":
-            guard let center = Wire.array((args.count > 0 ? args[0] : nil), 2).flatMap({ v0 -> (Double, Double)? in guard let v0_0 = Wire.f64(v0[0]), let v0_1 = Wire.f64(v0[1]) else { return nil }; return (v0_0, v0_1) }) else { return settle.reject("bad arguments — MapView.jumpTo: center") }
-            let a1: Any? = args.count > 1 ? args[1] : nil
-            var options: MapCameraMove? = nil
-            if Wire.present(a1) {
-                guard let v = MapCameraMove(wire: a1) else { return settle.reject("bad arguments — MapView.jumpTo: options") }
-                options = v
+            guard let a0 = args[0].tuple(2).flatMap({ v0 -> (Double, Double)? in
+                guard let v0_0 = v0[0].f64, let v0_1 = v0[1].f64 else { return nil }
+                return (v0_0, v0_1)
+            }) else { return settle.reject("bad arguments — MapView.jumpTo: center") }
+            let w1 = args[1]
+            var a1: MapCameraMove? = nil
+            if w1.isPresent {
+                guard let v = MapCameraMove(wire: w1) else { return settle.reject("bad arguments — MapView.jumpTo: options") }
+                a1 = v
             }
-            plugin.jumpTo(center, options, Reply<Void, MapViewCode>(settle) { _ in nil })
+            plugin.jumpTo(a0, a1, Reply<Void, MapViewCode>(settle))
         case "fitPoints":
-            guard let points = Wire.list((args.count > 0 ? args[0] : nil), { v0 in Wire.array(v0, 2).flatMap({ v1 -> (Double, Double)? in guard let v1_0 = Wire.f64(v1[0]), let v1_1 = Wire.f64(v1[1]) else { return nil }; return (v1_0, v1_1) }) }) else { return settle.reject("bad arguments — MapView.fitPoints: points") }
-            let a1: Any? = args.count > 1 ? args[1] : nil
-            var options: MapFitOptions? = nil
-            if Wire.present(a1) {
-                guard let v = MapFitOptions(wire: a1) else { return settle.reject("bad arguments — MapView.fitPoints: options") }
-                options = v
+            guard let a0 = args[0].list({ v0 in
+                v0.tuple(2).flatMap({ v1 -> (Double, Double)? in
+                    guard let v1_0 = v1[0].f64, let v1_1 = v1[1].f64 else { return nil }
+                    return (v1_0, v1_1)
+                })
+            }) else { return settle.reject("bad arguments — MapView.fitPoints: points") }
+            let w1 = args[1]
+            var a1: MapFitOptions? = nil
+            if w1.isPresent {
+                guard let v = MapFitOptions(wire: w1) else { return settle.reject("bad arguments — MapView.fitPoints: options") }
+                a1 = v
             }
-            plugin.fitPoints(points, options, Reply<Void, MapViewCode>(settle) { _ in nil })
+            plugin.fitPoints(a0, a1, Reply<Void, MapViewCode>(settle))
         case "setPadding":
-            guard let padding = MapPadding(wire: (args.count > 0 ? args[0] : nil)) else { return settle.reject("bad arguments — MapView.setPadding: padding") }
-            plugin.setPadding(padding, Reply<Void, MapViewCode>(settle) { _ in nil })
+            guard let a0 = MapPadding(wire: args[0]) else { return settle.reject("bad arguments — MapView.setPadding: padding") }
+            plugin.setPadding(a0, Reply<Void, MapViewCode>(settle))
         case "getCamera":
-            plugin.getCamera(Reply<MapCamera, MapViewCode>(settle) { v in v.wire })
+            plugin.getCamera(Reply<MapCamera, MapViewCode>(settle) { v, w in v.write(to: w) })
         case "setUserLocation":
-            let a0: Any? = args.count > 0 ? args[0] : nil
-            var lngLat: (Double, Double)? = nil
-            if Wire.present(a0) {
-                guard let v = Wire.array(a0, 2).flatMap({ v0 -> (Double, Double)? in guard let v0_0 = Wire.f64(v0[0]), let v0_1 = Wire.f64(v0[1]) else { return nil }; return (v0_0, v0_1) }) else { return settle.reject("bad arguments — MapView.setUserLocation: lngLat") }
-                lngLat = v
+            let w0 = args[0]
+            var a0: (Double, Double)? = nil
+            if w0.isPresent {
+                guard let v = w0.tuple(2).flatMap({ v0 -> (Double, Double)? in
+                    guard let v0_0 = v0[0].f64, let v0_1 = v0[1].f64 else { return nil }
+                    return (v0_0, v0_1)
+                }) else { return settle.reject("bad arguments — MapView.setUserLocation: lngLat") }
+                a0 = v
             }
-            let a1: Any? = args.count > 1 ? args[1] : nil
-            var options: MapUserLocationOptions? = nil
-            if Wire.present(a1) {
-                guard let v = MapUserLocationOptions(wire: a1) else { return settle.reject("bad arguments — MapView.setUserLocation: options") }
-                options = v
+            let w1 = args[1]
+            var a1: MapUserLocationOptions? = nil
+            if w1.isPresent {
+                guard let v = MapUserLocationOptions(wire: w1) else { return settle.reject("bad arguments — MapView.setUserLocation: options") }
+                a1 = v
             }
-            plugin.setUserLocation(lngLat, options, Reply<Void, MapViewCode>(settle) { _ in nil })
+            plugin.setUserLocation(a0, a1, Reply<Void, MapViewCode>(settle))
         default:
             settle.reject("Unknown method: \(method)")
         }

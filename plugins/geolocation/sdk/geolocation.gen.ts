@@ -14,16 +14,16 @@ export const VERSION = 1
 /** One fix.
  *  Rejects with "denied" / "unavailable" / "timeout". */
 export const getCurrent = (service: ServiceChannel<GeolocationEvents>, options?: GeoOptions): Promise<GeoPosition> =>
-  service._call("getCurrent", [options], 1, true)
+  service._call("getCurrent", [options])
 
 /** Start the session's watch; resolves once it is live (permission granted, provider started).
  *  A second call while watching resolves at once and keeps the first call's options.
  *  Rejects with "denied" / "unavailable". */
 export const startWatch = (service: ServiceChannel<GeolocationEvents>, options?: GeoOptions): Promise<void> =>
-  service._call("startWatch", [options], 1, true)
+  service._call("startWatch", [options])
 
 export const stopWatch = (service: ServiceChannel<GeolocationEvents>): Promise<void> =>
-  service._call("stopWatch", [], 1, true)
+  service._call("stopWatch", [])
 
 // ---- what the host's half has --------------------------------------------------------------------
 

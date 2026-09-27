@@ -10,14 +10,18 @@ import io.letary.lecodes.services.PluginEmit
 import io.letary.lecodes.services.Reply
 import io.letary.lecodes.services.Services
 import io.letary.lecodes.services.Wire
-import org.json.JSONArray
-import org.json.JSONObject
+import io.letary.lecodes.core.PackedReader
+import io.letary.lecodes.core.PackedWriter
 
 // ---- The contract's types ----
 
 class PushParams {
     companion object {
-        internal fun fromWire(wire: Any?): PushParams? = if (!Wire.present(wire) || Wire.obj(wire) != null) PushParams() else null
+        internal fun read(r: PackedReader): PushParams? {
+            if (r.isNull()) return PushParams()
+            if (r.beginObject() < 0) return null
+            return PushParams()
+        }
     }
 }
 
@@ -33,13 +37,12 @@ data class PushStatus(
     /** Whether this device holds a registration (an address) for this app. */
     val registered: Boolean,
 ) {
-    internal val wire: Any
-        get() {
-            val o = JSONObject()
-            o.put("permission", permission.wire)
-            o.put("registered", registered)
-            return o
-        }
+    internal fun write(w: PackedWriter) {
+        w.beginObject()
+        w.key("permission"); w.string(this.permission.wire)
+        w.key("registered"); w.bool(this.registered)
+        w.end()
+    }
 }
 
 data class PushRegisterOptions(
@@ -50,10 +53,17 @@ data class PushRegisterOptions(
     val user: String? = null,
 ) {
     companion object {
-        internal fun fromWire(wire: Any?): PushRegisterOptions? {
-            val o = Wire.obj(wire) ?: return null
-            val user = if (Wire.present(o.opt("user"))) (Wire.string(o.opt("user")) ?: return null) else null
-            return PushRegisterOptions(user = user)
+        internal fun read(r: PackedReader): PushRegisterOptions? {
+            val n = r.beginObject()
+            if (n < 0) return null
+            var m0: String? = null
+            repeat(n) {
+                when (r.key()) {
+                    "user" -> if (r.isNull()) r.skip() else m0 = r.string() ?: return null
+                    else -> r.skip()
+                }
+            }
+            return PushRegisterOptions(user = m0)
         }
     }
 }
@@ -61,12 +71,11 @@ data class PushRegisterOptions(
 data class PushRegistration(
     val address: String,
 ) {
-    internal val wire: Any
-        get() {
-            val o = JSONObject()
-            o.put("address", address)
-            return o
-        }
+    internal fun write(w: PackedWriter) {
+        w.beginObject()
+        w.key("address"); w.string(this.address)
+        w.end()
+    }
 }
 
 /** A delivered notification, as the app sees it. */
@@ -79,16 +88,23 @@ data class PushPayload(
     val data: Map<String, Any>? = null,
     val badge: Int? = null,
 ) {
-    internal val wire: Any
-        get() {
-            val o = JSONObject()
-            o.put("title", title)
-            body?.let { v -> o.put("body", v) }
-            url?.let { v -> o.put("url", v) }
-            data?.let { v -> o.put("data", Wire.writeMap(v) { v1 -> v1 }) }
-            badge?.let { v -> o.put("badge", v) }
-            return o
+    internal fun write(w: PackedWriter) {
+        w.beginObject()
+        w.key("title"); w.string(this.title)
+        this.body?.let { v -> w.key("body"); w.string(v) }
+        this.url?.let { v -> w.key("url"); w.string(v) }
+        this.data?.let { v ->
+            w.key("data")
+            w.beginObject()
+            for ((k1, v1) in v) {
+                w.key(k1)
+                w.json(v1)
+            }
+            w.end()
         }
+        this.badge?.let { v -> w.key("badge"); w.i32(v) }
+        w.end()
+    }
 }
 
 // ---- Push ----
@@ -102,10 +118,18 @@ enum class PushCode(override val code: String) : PluginCode {
 /** The events of "push": what the plugin sends the app. Any thread. */
 class PushEvents(private val channel: PluginEmit) {
     /** Arrived while this app was in the foreground (the host shows no banner). */
-    fun message(payload: PushPayload) = channel.emit("message", payload.wire)
+    fun message(payload: PushPayload) {
+        val w = PackedWriter()
+        payload.write(w)
+        channel.emit("message", w.bytes())
+    }
 
     /** Tapped while the world was alive. */
-    fun tap(payload: PushPayload) = channel.emit("tap", payload.wire)
+    fun tap(payload: PushPayload) {
+        val w = PackedWriter()
+        payload.write(w)
+        channel.emit("tap", w.bytes())
+    }
 }
 
 /**
@@ -148,29 +172,29 @@ object PushChannel {
      *  prompt, no I/O: that belongs to the first call that needs it. */
     fun register(engine: LecodesEngine, make: (params: PushParams, events: PushEvents) -> PushPlugin) {
         engine.registerService(NAME, VERSION) { params, channel ->
-            val plugin = make(PushParams.fromWire(params) ?: PushParams(), PushEvents { event, data -> channel.emitValue(event, data) })
-            Services.Instance(onCall = { call -> PushGlue.call(plugin, call.method, call.args, call) }, onClose = { plugin.close() })
+            val plugin = make(PushParams.read(Wire.reader(params)) ?: PushParams(), PushEvents { event, packed -> channel.emitPacked(event, packed) })
+            Services.Instance(onCall = { call -> PushGlue.call(plugin, call.method, call.reader(), call) }, onClose = { plugin.close() })
         }
     }
 }
 
 /** Reads a call off the wire and hands it to the plugin; a malformed call never reaches it. */
 internal object PushGlue {
-    fun call(plugin: PushPlugin, method: String, args: JSONArray, settle: ChannelSettle) {
+    fun call(plugin: PushPlugin, method: String, r: PackedReader, settle: ChannelSettle) {
+        val n = r.beginArray()   // the arguments, in their order
         when (method) {
             "getStatus" -> {
-                plugin.getStatus(Reply<PushStatus, PushCode>(settle) { v -> v.wire })
+                plugin.getStatus(Reply<PushStatus, PushCode>(settle) { v, w -> v.write(w) })
             }
             "register" -> {
-                val a0 = args.opt(0)
-                val options = if (Wire.present(a0)) (PushRegisterOptions.fromWire(a0) ?: return settle.reject("bad arguments — Push.register: options")) else null
-                plugin.register(options, Reply<PushRegistration, PushCode>(settle) { v -> v.wire })
+                val a0 = if (0 < n && !r.isNull()) (PushRegisterOptions.read(r) ?: return settle.reject("bad arguments — Push.register: options")) else { if (0 < n) r.skip(); null }
+                plugin.register(a0, Reply<PushRegistration, PushCode>(settle) { v, w -> v.write(w) })
             }
             "unregister" -> {
-                plugin.unregister(Reply<Unit, PushCode>(settle) { null })
+                plugin.unregister(Reply<Unit, PushCode>(settle, null))
             }
             "getLaunch" -> {
-                plugin.getLaunch(Reply<PushPayload?, PushCode>(settle) { v -> v?.wire })
+                plugin.getLaunch(Reply<PushPayload?, PushCode>(settle) { v, w -> if (v != null) { v.write(w) } })
             }
             else -> settle.reject("Unknown method: $method")
         }
