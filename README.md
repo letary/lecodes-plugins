@@ -68,15 +68,16 @@ export interface CameraView extends View<"camera", CameraParams, CameraEvents> {
   the halves register under.
 - An event maps its name to its payload; `void` = no payload.
 - `@rejects` lists the codes a call can fail with. `@since <n>` marks a method added in version
-  `n` of the contract.
+  `n` of the contract: a half registers with the version it was generated from, and an app asks
+  `supports("<method>")` before it calls one a host's half may be too old for.
 - A contract describes the WIRE. The API an app sees (the wrapper in `sdk/`) may be higher: the
   map's wrapper turns marker items into GeoJSON and queues calls until the style has loaded.
 
 | type | meaning |
 |---|---|
-| `i32`, `f64`, `boolean`, `string` | scalars |
-| `Uint8Array` | bytes the app reads |
-| `File` | bytes that stay in the host; the app gets a handle (a texture, an upload, a share) |
+| `i32`, `f64`, `boolean`, `string` | scalars; a number that is not finite is a null on the wire |
+| `Uint8Array` | bytes, as they are — no text in between: `Data` in Swift, `ByteArray` in Kotlin |
+| `File` | bytes that stay in the host; what crosses is a handle (a texture, an upload, a share) — either way |
 | `Json` | any JSON value, passed through untyped (GeoJSON, a developer's payload) |
 | a union of string literals | an enum |
 | `interface`, `T[]`, `[A, B]`, `T \| null`, `key?:` | a struct, a list, a tuple, a nullable, an optional |

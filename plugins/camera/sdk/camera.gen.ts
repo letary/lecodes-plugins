@@ -14,11 +14,21 @@ export const VERSION = 1
 /** Capture a still frame as a JPEG.
  *  Rejects with "failed". */
 export const takePhoto = (view: ViewChannel<CameraEvents>): Promise<File> =>
-  view._call("takePhoto", []).then((w: any) => _toFile(w))
+  view._call("takePhoto", [], 1, true).then((w: any) => _toFile(w))
 
 /** Switch the camera while the preview is live. */
 export const setFacingMode = (view: ViewChannel<CameraEvents>, mode: Facing): Promise<void> =>
-  view._call("setFacingMode", [mode])
+  view._call("setFacingMode", [mode], 1, true)
+
+// ---- what the host's half has --------------------------------------------------------------------
+
+/** A method of the contract. */
+export type Method = "takePhoto" | "setFacingMode"
+
+/** Whether this host has the view "camera" — and, given a method, a half new enough for it
+ *  (a method added after the first version of the contract is tagged `@since`). */
+export const supports = (method?: Method): boolean =>
+  ViewChannel.supports(NAME)   // every method is of version 1
 
 // ---- the element ----------------------------------------------------------------------------------
 

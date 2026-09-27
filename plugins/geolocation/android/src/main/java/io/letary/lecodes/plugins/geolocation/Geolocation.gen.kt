@@ -77,7 +77,7 @@ enum class GeolocationCode(override val code: String) : PluginCode {
 /** The events of "geolocation": what the plugin sends the app. Any thread. */
 class GeolocationEvents(private val channel: PluginEmit) {
     /** A fix of the live watch. */
-    fun position(payload: GeoPosition) = channel.emit("position", Wire.text(payload.wire))
+    fun position(payload: GeoPosition) = channel.emit("position", payload.wire)
 }
 
 /**
@@ -116,8 +116,8 @@ object GeolocationChannel {
     /** Register the service: `make` builds one session from its params. It must be cheap — no
      *  prompt, no I/O: that belongs to the first call that needs it. */
     fun register(engine: LecodesEngine, make: (params: GeolocationParams, events: GeolocationEvents) -> GeolocationPlugin) {
-        engine.registerService(NAME) { params, channel ->
-            val plugin = make(GeolocationParams.fromWire(params) ?: GeolocationParams(), GeolocationEvents { event, data -> channel.emit(event, data) })
+        engine.registerService(NAME, VERSION) { params, channel ->
+            val plugin = make(GeolocationParams.fromWire(params) ?: GeolocationParams(), GeolocationEvents { event, data -> channel.emitValue(event, data) })
             Services.Instance(onCall = { call -> GeolocationGlue.call(plugin, call.method, call.args, call) }, onClose = { plugin.close() })
         }
     }

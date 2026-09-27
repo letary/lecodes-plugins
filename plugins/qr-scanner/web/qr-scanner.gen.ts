@@ -11,21 +11,29 @@ export interface PluginChannel { emit(event: string, data?: unknown): void }
 
 /** The host, as a half needs it: a SHAPE — the host's own type is never imported. */
 export interface PluginHost {
+  // `version` = the contract version the half was generated from: what the app's `supports()` asks.
   registerView(name: string, factory: (params: unknown, channel: PluginChannel, doc: Document) => {
     el: HTMLElement, call?(method: string, args: unknown[]): unknown, destroy?(): void,
-  }): void
+  }, version: number): void
 }
 
-// The readers of the wire's values: undefined = absent, null, or not that type.
+// The readers of the wire's values: undefined = absent, null, or not that type. On the web the wire
+// carries the app's OWN values (the host is JavaScript like the app). What is read of the contract is
+// built anew — a struct, a list, bytes — so what a half keeps is its own; a Json value alone is the
+// app's object, as it is.
 const wire = {
   present: (v: unknown): boolean => v !== undefined && v !== null,
-  f64: (v: unknown): number | undefined => typeof v === "number" ? v : undefined,
+  /** A number that is not finite is a null on the wire, as JSON has it. */
+  f64: (v: unknown): number | undefined => typeof v === "number" && Number.isFinite(v) ? v : undefined,
   i32: (v: unknown): number | undefined =>
     typeof v === "number" && Number.isInteger(v) && v >= -2147483648 && v <= 2147483647 ? v : undefined,
   bool: (v: unknown): boolean | undefined => typeof v === "boolean" ? v : undefined,
   string: (v: unknown): string | undefined => typeof v === "string" ? v : undefined,
   /** Any JSON value, as it is; a null is a value here. */
   json: (v: unknown): any => v,
+  /** A copy of the bytes. Told by its class name, not `instanceof`: the app's realm may not be the half's. */
+  bytes: (v: unknown): Uint8Array | undefined =>
+    Object.prototype.toString.call(v) === "[object Uint8Array]" ? (v as Uint8Array).slice() : undefined,
   object: (v: unknown): Record<string, unknown> | undefined =>
     typeof v === "object" && v !== null && !Array.isArray(v) ? v as Record<string, unknown> : undefined,
   /** An array of exactly `count` values (a tuple), or of any length. */
@@ -98,5 +106,5 @@ export const registerQRScanner = (host: PluginHost, make: (params: QRScannerPara
       }
     }
     return { el: plugin.el, call, destroy: () => plugin.destroy?.() }
-  })
+  }, QRScannerChannel.version)
 }

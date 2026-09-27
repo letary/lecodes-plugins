@@ -151,7 +151,7 @@ public enum PushChannel {
     /// Register the service: `make` builds one session from its params. It must be cheap — no prompt,
     /// no I/O: that belongs to the first call that needs it.
     public static func register(in engine: LeCodesEngine, _ make: @escaping (PushParams, PushEvents) -> PushPlugin) {
-        engine.registerService(name) { params, channel in
+        engine.registerService(name, version: Int32(version)) { params, channel in
             PushGlue(make(PushParams(wire: params) ?? PushParams(), PushEvents(channel: channel)))
         }
     }

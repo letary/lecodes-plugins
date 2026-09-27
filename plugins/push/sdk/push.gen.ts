@@ -13,21 +13,31 @@ export const VERSION = 1
 
 /** Permission + registration state. Never prompts. */
 export const getStatus = (service: ServiceChannel<PushEvents>): Promise<PushStatus> =>
-  service._call("getStatus", [])
+  service._call("getStatus", [], 1, true)
 
 /** Ask for the permission (the first time) and register this device. Idempotent.
  *  Rejects with "denied" / "unavailable". */
 export const register = (service: ServiceChannel<PushEvents>, options?: PushRegisterOptions): Promise<PushRegistration> =>
-  service._call("register", [options])
+  service._call("register", [options], 1, true)
 
 /** Remove this device's registration.
  *  Rejects with "unavailable". */
 export const unregister = (service: ServiceChannel<PushEvents>): Promise<void> =>
-  service._call("unregister", [])
+  service._call("unregister", [], 1, true)
 
 /** The notification that cold-started this world, or null. Stable across calls. */
 export const getLaunch = (service: ServiceChannel<PushEvents>): Promise<PushPayload | null> =>
-  service._call("getLaunch", []).then((w: any) => w ?? null)
+  service._call("getLaunch", [], 1, true).then((w: any) => w ?? null)
+
+// ---- what the host's half has --------------------------------------------------------------------
+
+/** A method of the contract. */
+export type Method = "getStatus" | "register" | "unregister" | "getLaunch"
+
+/** Whether this host has the service "push" — and, given a method, a half new enough for it
+ *  (a method added after the first version of the contract is tagged `@since`). */
+export const supports = (method?: Method): boolean =>
+  ServiceChannel.supports(NAME)   // every method is of version 1
 
 // ---- the client -----------------------------------------------------------------------------------
 

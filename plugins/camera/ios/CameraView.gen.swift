@@ -82,7 +82,7 @@ public enum CameraViewChannel {
 
     /// Register the view: `make` builds one instance from its params.
     public static func register(in engine: LeCodesEngine, _ make: @escaping (CameraParams, CameraViewEvents) -> CameraViewPlugin) {
-        engine.registerView(name) { params, channel in
+        engine.registerView(name, version: Int32(version)) { params, channel in
             CameraViewGlue(make(CameraParams(wire: params) ?? CameraParams(), CameraViewEvents(channel: channel)))
         }
     }

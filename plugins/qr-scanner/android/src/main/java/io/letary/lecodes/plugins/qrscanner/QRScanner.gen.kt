@@ -30,7 +30,7 @@ class QRScannerEvents(private val channel: PluginEmit) {
     fun scan(data: String? = null) {
         val o = JSONObject()
         o.put("data", (data ?: JSONObject.NULL))
-        channel.emit("scan", o.toString())
+        channel.emit("scan", o)
     }
 }
 
@@ -57,8 +57,8 @@ object QRScannerChannel {
 
     /** Register the view: `make` builds one instance from its params. */
     fun register(engine: LecodesEngine, make: (params: QRScannerParams, events: QRScannerEvents) -> QRScannerPlugin) {
-        engine.registerView(NAME) { params, channel ->
-            val plugin = make(QRScannerParams.fromWire(params) ?: QRScannerParams(), QRScannerEvents { event, data -> channel.emit(event, data) })
+        engine.registerView(NAME, VERSION) { params, channel ->
+            val plugin = make(QRScannerParams.fromWire(params) ?: QRScannerParams(), QRScannerEvents { event, data -> channel.emitValue(event, data) })
             NativeViews.Instance(plugin.view, onCall = { call -> QRScannerGlue.call(plugin, call.method, call.args, call) }, onDestroy = { plugin.destroy() })
         }
     }

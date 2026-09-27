@@ -446,7 +446,7 @@ public enum MapViewChannel {
 
     /// Register the view: `make` builds one instance from its params.
     public static func register(in engine: LeCodesEngine, _ make: @escaping (MapParams, MapViewEvents) -> MapViewPlugin) {
-        engine.registerView(name) { params, channel in
+        engine.registerView(name, version: Int32(version)) { params, channel in
             MapViewGlue(make(MapParams(wire: params) ?? MapParams(), MapViewEvents(channel: channel)))
         }
     }

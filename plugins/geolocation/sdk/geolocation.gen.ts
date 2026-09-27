@@ -14,16 +14,26 @@ export const VERSION = 1
 /** One fix.
  *  Rejects with "denied" / "unavailable" / "timeout". */
 export const getCurrent = (service: ServiceChannel<GeolocationEvents>, options?: GeoOptions): Promise<GeoPosition> =>
-  service._call("getCurrent", [options])
+  service._call("getCurrent", [options], 1, true)
 
 /** Start the session's watch; resolves once it is live (permission granted, provider started).
  *  A second call while watching resolves at once and keeps the first call's options.
  *  Rejects with "denied" / "unavailable". */
 export const startWatch = (service: ServiceChannel<GeolocationEvents>, options?: GeoOptions): Promise<void> =>
-  service._call("startWatch", [options])
+  service._call("startWatch", [options], 1, true)
 
 export const stopWatch = (service: ServiceChannel<GeolocationEvents>): Promise<void> =>
-  service._call("stopWatch", [])
+  service._call("stopWatch", [], 1, true)
+
+// ---- what the host's half has --------------------------------------------------------------------
+
+/** A method of the contract. */
+export type Method = "getCurrent" | "startWatch" | "stopWatch"
+
+/** Whether this host has the service "geolocation" — and, given a method, a half new enough for it
+ *  (a method added after the first version of the contract is tagged `@since`). */
+export const supports = (method?: Method): boolean =>
+  ServiceChannel.supports(NAME)   // every method is of version 1
 
 // ---- the client -----------------------------------------------------------------------------------
 

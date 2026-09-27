@@ -122,7 +122,7 @@ public enum GeolocationChannel {
     /// Register the service: `make` builds one session from its params. It must be cheap — no prompt,
     /// no I/O: that belongs to the first call that needs it.
     public static func register(in engine: LeCodesEngine, _ make: @escaping (GeolocationParams, GeolocationEvents) -> GeolocationPlugin) {
-        engine.registerService(name) { params, channel in
+        engine.registerService(name, version: Int32(version)) { params, channel in
             GeolocationGlue(make(GeolocationParams(wire: params) ?? GeolocationParams(), GeolocationEvents(channel: channel)))
         }
     }

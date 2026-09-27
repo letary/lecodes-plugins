@@ -9,6 +9,16 @@ export const NAME = "qrScanner"
 /** The contract's version: the highest `@since` of its members. */
 export const VERSION = 1
 
+// ---- what the host's half has --------------------------------------------------------------------
+
+/** A method of the contract. */
+export type Method = never
+
+/** Whether this host has the view "qrScanner" — and, given a method, a half new enough for it
+ *  (a method added after the first version of the contract is tagged `@since`). */
+export const supports = (method?: Method): boolean =>
+  ViewChannel.supports(NAME)   // every method is of version 1
+
 // ---- the element ----------------------------------------------------------------------------------
 
 /** The view "qrScanner" with the wire's methods as its own. */

@@ -270,16 +270,16 @@ class MapViewEvents(private val channel: PluginEmit) {
     /** The style loaded and the map takes calls. Fires again after every style reload. */
     fun ready() = channel.emit("ready", null)
 
-    fun tap(payload: MapTap) = channel.emit("tap", Wire.text(payload.wire))
+    fun tap(payload: MapTap) = channel.emit("tap", payload.wire)
 
     /** The camera settled after a gesture or an animation. */
-    fun moveEnd(payload: MapCamera) = channel.emit("moveEnd", Wire.text(payload.wire))
+    fun moveEnd(payload: MapCamera) = channel.emit("moveEnd", payload.wire)
 
     /** A problem that is never fatal: a style that would not load, a source out of reach. */
     fun error(message: String) {
         val o = JSONObject()
         o.put("message", message)
-        channel.emit("error", o.toString())
+        channel.emit("error", o)
     }
 }
 
@@ -340,8 +340,8 @@ object MapViewChannel {
 
     /** Register the view: `make` builds one instance from its params. */
     fun register(engine: LecodesEngine, make: (params: MapParams, events: MapViewEvents) -> MapViewPlugin) {
-        engine.registerView(NAME) { params, channel ->
-            val plugin = make(MapParams.fromWire(params) ?: MapParams(), MapViewEvents { event, data -> channel.emit(event, data) })
+        engine.registerView(NAME, VERSION) { params, channel ->
+            val plugin = make(MapParams.fromWire(params) ?: MapParams(), MapViewEvents { event, data -> channel.emitValue(event, data) })
             NativeViews.Instance(plugin.view, onCall = { call -> MapViewGlue.call(plugin, call.method, call.args, call) }, onDestroy = { plugin.destroy() })
         }
     }

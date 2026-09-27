@@ -53,7 +53,7 @@ public enum QRScannerChannel {
 
     /// Register the view: `make` builds one instance from its params.
     public static func register(in engine: LeCodesEngine, _ make: @escaping (QRScannerParams, QRScannerEvents) -> QRScannerPlugin) {
-        engine.registerView(name) { params, channel in
+        engine.registerView(name, version: Int32(version)) { params, channel in
             QRScannerGlue(make(QRScannerParams(wire: params) ?? QRScannerParams(), QRScannerEvents(channel: channel)))
         }
     }

@@ -51,7 +51,7 @@ class CameraViewEvents(private val channel: PluginEmit) {
     fun error(message: String) {
         val o = JSONObject()
         o.put("message", message)
-        channel.emit("error", o.toString())
+        channel.emit("error", o)
     }
 }
 
@@ -87,8 +87,8 @@ object CameraViewChannel {
 
     /** Register the view: `make` builds one instance from its params. */
     fun register(engine: LecodesEngine, make: (params: CameraParams, events: CameraViewEvents) -> CameraViewPlugin) {
-        engine.registerView(NAME) { params, channel ->
-            val plugin = make(CameraParams.fromWire(params) ?: CameraParams(), CameraViewEvents { event, data -> channel.emit(event, data) })
+        engine.registerView(NAME, VERSION) { params, channel ->
+            val plugin = make(CameraParams.fromWire(params) ?: CameraParams(), CameraViewEvents { event, data -> channel.emitValue(event, data) })
             NativeViews.Instance(plugin.view, onCall = { call -> CameraViewGlue.call(plugin, call.method, call.args, call) }, onDestroy = { plugin.destroy() })
         }
     }

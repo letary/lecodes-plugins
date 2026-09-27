@@ -102,10 +102,10 @@ enum class PushCode(override val code: String) : PluginCode {
 /** The events of "push": what the plugin sends the app. Any thread. */
 class PushEvents(private val channel: PluginEmit) {
     /** Arrived while this app was in the foreground (the host shows no banner). */
-    fun message(payload: PushPayload) = channel.emit("message", Wire.text(payload.wire))
+    fun message(payload: PushPayload) = channel.emit("message", payload.wire)
 
     /** Tapped while the world was alive. */
-    fun tap(payload: PushPayload) = channel.emit("tap", Wire.text(payload.wire))
+    fun tap(payload: PushPayload) = channel.emit("tap", payload.wire)
 }
 
 /**
@@ -147,8 +147,8 @@ object PushChannel {
     /** Register the service: `make` builds one session from its params. It must be cheap — no
      *  prompt, no I/O: that belongs to the first call that needs it. */
     fun register(engine: LecodesEngine, make: (params: PushParams, events: PushEvents) -> PushPlugin) {
-        engine.registerService(NAME) { params, channel ->
-            val plugin = make(PushParams.fromWire(params) ?: PushParams(), PushEvents { event, data -> channel.emit(event, data) })
+        engine.registerService(NAME, VERSION) { params, channel ->
+            val plugin = make(PushParams.fromWire(params) ?: PushParams(), PushEvents { event, data -> channel.emitValue(event, data) })
             Services.Instance(onCall = { call -> PushGlue.call(plugin, call.method, call.args, call) }, onClose = { plugin.close() })
         }
     }
