@@ -1,7 +1,7 @@
 //
 //  LeCodesMapPlugin.kt — lecodes-plugins/map
 //
-//  The "map" registerView plugin over maplibre-native (Maven `org.maplibre.gl:android-sdk`).
+//  The "map" registerView plugin over maplibre-native (Maven `org.maplibre.gl:android-sdk-opengl`).
 //  WHEN and WITH WHAT to show it is app (TS) code. The channel is the contract's (../contract.d.ts):
 //  MapView.gen.kt is generated from it, MapViewInstance implements its MapViewPlugin.
 //

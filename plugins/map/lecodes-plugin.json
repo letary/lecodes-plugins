@@ -21,7 +21,7 @@
     "module": "lecodes-map",
     "register": "io.letary.lecodes.plugins.map.LeCodesMapPlugin",
     "dependencies": [
-      "org.maplibre.gl:android-sdk:13.6.0"
+      "org.maplibre.gl:android-sdk-opengl:13.6.0"
     ]
   },
   "web": {

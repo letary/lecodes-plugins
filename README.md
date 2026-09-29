@@ -99,7 +99,7 @@ export interface CameraView extends View<"camera", CameraParams, CameraEvents> {
   },
   "android": {
     "register": "io.letary.lecodes.plugins.map.LeCodesMapPlugin",
-    "dependencies": ["org.maplibre.gl:android-sdk:13.6.0"]
+    "dependencies": ["org.maplibre.gl:android-sdk-opengl:13.6.0"]
   },
   "web": {
     "register": "web/map.ts",
