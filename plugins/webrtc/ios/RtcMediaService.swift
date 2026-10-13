@@ -1,7 +1,8 @@
 //
 //  RtcMediaService.swift — lecodes-plugins/webrtc
 //
-//  The "rtcMedia" service: capture (the permissions asked on the first call that needs them), the
+//  The "rtcMedia" service: capture (the permissions asked on the first call that needs them — by
+//  hand through the host's `Permissions`, since which ones depends on the constraints), the
 //  device list, the audio route. One session for the app; the tracks it makes live in RtcEngine's
 //  registry, where the connections and the views find them.
 //
@@ -14,11 +15,13 @@ import LeCodes
 final class RtcMediaService: RtcMediaPlugin {
 
     private let events: RtcMediaEvents
+    private let permissions: Permissions
     private let engine = RtcEngine.shared
     private var routeObserver: NSObjectProtocol?
 
-    init(_ events: RtcMediaEvents) {
+    init(_ permissions: Permissions, _ events: RtcMediaEvents) {
         self.events = events
+        self.permissions = permissions
         routeObserver = NotificationCenter.default.addObserver(forName: AVAudioSession.routeChangeNotification, object: nil, queue: nil) { [events] note in
             guard let reason = note.userInfo?[AVAudioSessionRouteChangeReasonKey] as? UInt else { return }
             if reason == AVAudioSession.RouteChangeReason.newDeviceAvailable.rawValue || reason == AVAudioSession.RouteChangeReason.oldDeviceUnavailable.rawValue {
@@ -38,12 +41,12 @@ final class RtcMediaService: RtcMediaPlugin {
         let wantsAudio = constraints.audio != nil
         let wantsVideo = constraints.video != nil
         guard wantsAudio || wantsVideo else { return reply.fail("getUserMedia: audio or video must be requested") }
-        Self.permission(.audio, needed: wantsAudio) { audioOk in
-            guard audioOk else { return reply.reject(.denied) }
-            Self.permission(.video, needed: wantsVideo) { videoOk in
-                guard videoOk else { return reply.reject(.denied) }
-                DispatchQueue.main.async { self.capture(constraints, reply) }
-            }
+        var kinds: [PermissionKind] = []
+        if wantsAudio { kinds.append(.microphone) }
+        if wantsVideo { kinds.append(.camera) }
+        permissions.ensure(kinds) { granted in
+            guard granted else { return reply.reject(.denied) }
+            self.capture(constraints, reply)
         }
     }
 
@@ -73,15 +76,6 @@ final class RtcMediaService: RtcMediaPlugin {
         let track = engine.factory.videoTrack(with: source, trackId: id)
         tracks.append(RtcTrack(id: id, track: track, remote: false, label: device.localizedName, capture: capture))
         capture.start(video) { started in DispatchQueue.main.async { finish(started) } }
-    }
-
-    private static func permission(_ media: AVMediaType, needed: Bool, _ then: @escaping (Bool) -> Void) {
-        guard needed else { return then(true) }
-        switch AVCaptureDevice.authorizationStatus(for: media) {
-        case .authorized: then(true)
-        case .notDetermined: AVCaptureDevice.requestAccess(for: media) { then($0) }
-        default: then(false)
-        }
     }
 
     // MARK: - the devices

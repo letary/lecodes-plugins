@@ -108,10 +108,12 @@ public struct GeolocationEvents {
 /// once, now or later, from any thread.
 public protocol GeolocationPlugin: AnyObject {
     /// One fix.
+    /// Needs the location permission: asked by the glue before the call, .denied when refused.
     /// Rejects with .denied / .unavailable / .timeout.
     func getCurrent(_ options: GeoOptions?, _ reply: Reply<GeoPosition, GeolocationCode>)
-    /// Start the session's watch; resolves once it is live (permission granted, provider started).
+    /// Start the session's watch; resolves once it is live (the provider started).
     /// A second call while watching resolves at once and keeps the first call's options.
+    /// Needs the location permission: asked by the glue before the call, .denied when refused.
     /// Rejects with .denied / .unavailable.
     func startWatch(_ options: GeoOptions?, _ reply: Reply<Void, GeolocationCode>)
     func stopWatch(_ reply: Reply<Void, GeolocationCode>)
@@ -134,7 +136,7 @@ public enum GeolocationChannel {
     /// no I/O: that belongs to the first call that needs it.
     public static func register(in engine: LeCodesEngine, _ make: @escaping (GeolocationParams, GeolocationEvents) -> GeolocationPlugin) {
         engine.registerService(name, version: Int32(version)) { params, channel in
-            GeolocationGlue(make(WireIn.of(params, { GeolocationParams(wire: $0) }) ?? GeolocationParams(), GeolocationEvents(channel: channel)))
+            GeolocationGlue(make(WireIn.of(params, { GeolocationParams(wire: $0) }) ?? GeolocationParams(), GeolocationEvents(channel: channel)), engine.permissions)
         }
     }
 }
@@ -142,8 +144,13 @@ public enum GeolocationChannel {
 /// Reads a call off the wire and hands it to the plugin; a malformed call never reaches it.
 final class GeolocationGlue: WireServiceInstance {
     private let plugin: GeolocationPlugin
+    /// The host's permission service: what a method tagged `@permission` is gated by.
+    private let permissions: Permissions
 
-    init(_ plugin: GeolocationPlugin) { self.plugin = plugin }
+    init(_ plugin: GeolocationPlugin, _ permissions: Permissions) {
+        self.plugin = plugin
+        self.permissions = permissions
+    }
 
     func call(_ method: String, wire args: WireIn, _ settle: ChannelSettle) {
         switch method {
@@ -154,7 +161,11 @@ final class GeolocationGlue: WireServiceInstance {
                 guard let v = GeoOptions(wire: w0) else { return settle.reject("bad arguments — Geolocation.getCurrent: options") }
                 a0 = v
             }
-            plugin.getCurrent(a0, Reply<GeoPosition, GeolocationCode>(settle) { v, w in v.write(to: w) })
+            let reply = Reply<GeoPosition, GeolocationCode>(settle) { v, w in v.write(to: w) }
+            permissions.ensure([.location]) { [plugin] granted in
+                guard granted else { return reply.reject(.denied) }
+                plugin.getCurrent(a0, reply)
+            }
         case "startWatch":
             let w0 = args[0]
             var a0: GeoOptions? = nil
@@ -162,7 +173,11 @@ final class GeolocationGlue: WireServiceInstance {
                 guard let v = GeoOptions(wire: w0) else { return settle.reject("bad arguments — Geolocation.startWatch: options") }
                 a0 = v
             }
-            plugin.startWatch(a0, Reply<Void, GeolocationCode>(settle))
+            let reply = Reply<Void, GeolocationCode>(settle)
+            permissions.ensure([.location]) { [plugin] granted in
+                guard granted else { return reply.reject(.denied) }
+                plugin.startWatch(a0, reply)
+            }
         case "stopWatch":
             plugin.stopWatch(Reply<Void, GeolocationCode>(settle))
         default:

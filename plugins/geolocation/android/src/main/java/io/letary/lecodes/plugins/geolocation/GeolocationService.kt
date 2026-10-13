@@ -2,13 +2,12 @@
 //  GeolocationService.kt — lecodes-plugins/geolocation
 //
 //  One session of the "geolocation" service: the contract's GeolocationPlugin (Geolocation.gen.kt
-//  reads the calls off the wire). The OS permission prompt happens on the first call that needs it (never in the factory),
-//  via the SDK's PermissionRequester.
+//  reads the calls off the wire). The OS permission is the contract's (`@permission location`): the
+//  generated glue asks the host before a call reaches here, so a call arrives permitted.
 //
 
 package io.letary.lecodes.plugins.geolocation
 
-import android.Manifest
 import android.annotation.SuppressLint
 import android.content.Context
 import android.location.Location
@@ -20,13 +19,10 @@ import android.os.CancellationSignal
 import android.os.Handler
 import android.os.Looper
 import androidx.core.content.ContextCompat
-import io.letary.lecodes.LecodesEngine
-import io.letary.lecodes.services.PermissionRequester
 import io.letary.lecodes.services.Reply
 import io.letary.lecodes.services.resolve
 
 class GeolocationService(
-    private val engine: LecodesEngine,
     context: Context,
     private val events: GeolocationEvents,
 ) : GeolocationPlugin {
@@ -41,9 +37,9 @@ class GeolocationService(
     // ── calls ────────────────────────────────────────────────────────────────
 
     override fun getCurrent(options: GeoOptions?, reply: Reply<GeoPosition, GeolocationCode>) {
-        withPermission(reply) {
+        run {
             val provider = pickProvider(options?.highAccuracy ?: false)
-                ?: return@withPermission reply.reject(GeolocationCode.UNAVAILABLE)
+                ?: return reply.reject(GeolocationCode.UNAVAILABLE)
             val timeout = options?.timeout?.toLong() ?: 0L
 
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
@@ -74,10 +70,10 @@ class GeolocationService(
     }
 
     override fun startWatch(options: GeoOptions?, reply: Reply<Unit, GeolocationCode>) {
-        withPermission(reply) {
-            if (watchListener != null) return@withPermission reply.resolve()   // already watching
+        run {
+            if (watchListener != null) return reply.resolve()   // already watching
             val provider = pickProvider(options?.highAccuracy ?: false)
-                ?: return@withPermission reply.reject(GeolocationCode.UNAVAILABLE)
+                ?: return reply.reject(GeolocationCode.UNAVAILABLE)
             val listener = LocationListener { location -> events.position(position(location)) }
             try {
                 @SuppressLint("MissingPermission")
@@ -101,23 +97,6 @@ class GeolocationService(
     }
 
     // ── plumbing ─────────────────────────────────────────────────────────────
-
-    /** Run [body] once location permission is granted; reject "denied" otherwise.
-     *  FINE + COARSE together: the system dialog lets the user pick "approximate", which
-     *  grants COARSE only — still a grant for our purposes (PermissionRequester's ANY rule). */
-    private fun withPermission(reply: Reply<*, GeolocationCode>, body: () -> Unit) {
-        if (hasPermission()) return body()
-        PermissionRequester.request(
-            engine,
-            arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION),
-        ) { granted ->
-            if (granted) body() else reply.reject(GeolocationCode.DENIED)
-        }
-    }
-
-    private fun hasPermission(): Boolean =
-        ContextCompat.checkSelfPermission(appContext, Manifest.permission.ACCESS_FINE_LOCATION) == android.content.pm.PackageManager.PERMISSION_GRANTED ||
-        ContextCompat.checkSelfPermission(appContext, Manifest.permission.ACCESS_COARSE_LOCATION) == android.content.pm.PackageManager.PERMISSION_GRANTED
 
     private fun pickProvider(highAccuracy: Boolean): String? {
         val preferred =

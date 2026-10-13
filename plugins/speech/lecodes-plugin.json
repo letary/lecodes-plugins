@@ -1,0 +1,22 @@
+{
+  "id": "speech",
+  "name": "Speech",
+  "version": "2.0.0",
+  "sdk": "^2.0.0",
+  "description": "Speech recognition: the microphone to text, live (SFSpeechRecognizer, android.speech.SpeechRecognizer, the browser's SpeechRecognition). The app's side is SpeechRecognizer.",
+  "ios": {
+    "module": "LeCodesSpeech",
+    "register": "LeCodesSpeechPlugin",
+    "infoPlist": {
+      "NSSpeechRecognitionUsageDescription": "The app turns your speech into text.",
+      "NSMicrophoneUsageDescription": "The app uses the microphone to recognize your speech."
+    }
+  },
+  "android": {
+    "module": "lecodes-speech",
+    "register": "io.letary.lecodes.plugins.speech.LeCodesSpeechPlugin"
+  },
+  "web": {
+    "register": "web/speech.ts"
+  }
+}

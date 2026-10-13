@@ -12,12 +12,14 @@ export const VERSION = 1
 // ---- the wire, call by call ----------------------------------------------------------------------
 
 /** One fix.
+ *  Needs the "location" permission: the host asks before the call, "denied" when refused.
  *  Rejects with "denied" / "unavailable" / "timeout". */
 export const getCurrent = (service: ServiceChannel<GeolocationEvents>, options?: GeoOptions): Promise<GeoPosition> =>
   service._call("getCurrent", [options])
 
-/** Start the session's watch; resolves once it is live (permission granted, provider started).
+/** Start the session's watch; resolves once it is live (the provider started).
  *  A second call while watching resolves at once and keeps the first call's options.
+ *  Needs the "location" permission: the host asks before the call, "denied" when refused.
  *  Rejects with "denied" / "unavailable". */
 export const startWatch = (service: ServiceChannel<GeolocationEvents>, options?: GeoOptions): Promise<void> =>
   service._call("startWatch", [options])
@@ -42,10 +44,12 @@ export class GeolocationBase extends ServiceChannel<GeolocationEvents> {
   constructor(params: GeolocationParams = {}) { super("Geolocation", NAME, params) }
 
   /** One fix.
+   *  Needs the "location" permission: the host asks before the call, "denied" when refused.
    *  Rejects with "denied" / "unavailable" / "timeout". */
   getCurrent(options?: GeoOptions): Promise<GeoPosition> { return getCurrent(this, options) }
-  /** Start the session's watch; resolves once it is live (permission granted, provider started).
+  /** Start the session's watch; resolves once it is live (the provider started).
    *  A second call while watching resolves at once and keeps the first call's options.
+   *  Needs the "location" permission: the host asks before the call, "denied" when refused.
    *  Rejects with "denied" / "unavailable". */
   startWatch(options?: GeoOptions): Promise<void> { return startWatch(this, options) }
   stopWatch(): Promise<void> { return stopWatch(this) }

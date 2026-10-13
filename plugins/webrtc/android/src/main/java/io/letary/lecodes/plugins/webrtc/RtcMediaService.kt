@@ -1,23 +1,21 @@
 //
 //  RtcMediaService.kt — lecodes-plugins/webrtc
 //
-//  The "rtcMedia" service: capture (the permissions asked on the first call that needs them, through
-//  the SDK's PermissionRequester), the device list, the audio route. One session for the app; the
+//  The "rtcMedia" service: capture (the permissions asked on the first call that needs them — by
+//  hand through the host's `Permissions`, since which ones depends on the constraints), the
+//  device list, the audio route. One session for the app; the
 //  tracks it makes live in RtcEngine's registry, where the connections and the views find them.
 //
 
 package io.letary.lecodes.plugins.webrtc
 
-import android.Manifest
 import android.content.Context
-import android.content.pm.PackageManager
 import android.media.AudioDeviceCallback
 import android.media.AudioDeviceInfo
 import android.media.AudioManager
-import androidx.core.content.ContextCompat
 import io.letary.lecodes.LecodesEngine
 import io.letary.lecodes.services.Reply
-import io.letary.lecodes.services.PermissionRequester
+import io.letary.lecodes.services.Permissions
 import io.letary.lecodes.services.resolve
 import org.webrtc.MediaConstraints as RtcMediaConstraints
 
@@ -47,10 +45,12 @@ class RtcMediaService(
         val wantsAudio = constraints.audio != null
         val wantsVideo = constraints.video != null
         if (!wantsAudio && !wantsVideo) return reply.fail("getUserMedia: audio or video must be requested")
-        withPermission(Manifest.permission.RECORD_AUDIO, wantsAudio, reply) {
-            withPermission(Manifest.permission.CAMERA, wantsVideo, reply) {
-                RtcEngine.mainHandler.post { capture(constraints, reply) }
-            }
+        val kinds = ArrayList<Permissions.Kind>()
+        if (wantsAudio) kinds.add(Permissions.Kind.MICROPHONE)
+        if (wantsVideo) kinds.add(Permissions.Kind.CAMERA)
+        engine.permissions.ensure(kinds) { granted ->
+            if (!granted) reply.reject(RtcMediaCode.DENIED)
+            else RtcEngine.mainHandler.post { capture(constraints, reply) }
         }
     }
 
@@ -85,14 +85,6 @@ class RtcMediaService(
         val track = factory.createVideoTrack(id, source)
         tracks.add(RtcTrack(id, track, remote = false, label = name, capture = capture))
         capture.start(video) { started -> RtcEngine.mainHandler.post { finish(started) } }
-    }
-
-    /** Run [body] once [permission] is granted (or not needed); reject "denied" otherwise. */
-    private fun withPermission(permission: String, needed: Boolean, reply: Reply<*, RtcMediaCode>, body: () -> Unit) {
-        if (!needed || ContextCompat.checkSelfPermission(context, permission) == PackageManager.PERMISSION_GRANTED) return body()
-        PermissionRequester.request(engine, arrayOf(permission)) { granted ->
-            if (granted) body() else reply.reject(RtcMediaCode.DENIED)
-        }
     }
 
     // ── the devices ──────────────────────────────────────────────────────────

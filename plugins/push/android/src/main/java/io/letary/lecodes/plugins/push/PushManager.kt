@@ -25,7 +25,6 @@ import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
 import com.google.firebase.messaging.FirebaseMessaging
 import io.letary.lecodes.LecodesEngine
-import io.letary.lecodes.services.PermissionRequester
 import io.letary.lecodes.services.Reply
 import io.letary.lecodes.services.resolve
 import org.json.JSONObject
@@ -234,7 +233,7 @@ object PushManager {
         val e = engine ?: return reply.reject(PushCode.DENIED)
         if (e.getActivity() == null) return reply.reject(PushCode.DENIED)
         prefs.edit().putBoolean("permissionRequested", true).apply()
-        PermissionRequester.request(e, arrayOf(Manifest.permission.POST_NOTIFICATIONS)) { granted ->
+        e.permissions.request(arrayOf(Manifest.permission.POST_NOTIFICATIONS)) { granted ->
             if (granted) body() else reply.reject(PushCode.DENIED)
         }
     }

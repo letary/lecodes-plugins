@@ -133,7 +133,7 @@ export interface GeolocationPlugin {
   /** One fix.
    *  Rejects with "denied" / "unavailable" / "timeout". */
   getCurrent(options?: GeoOptions): GeoPosition | Promise<GeoPosition>
-  /** Start the session's watch; resolves once it is live (permission granted, provider started).
+  /** Start the session's watch; resolves once it is live (the provider started).
    *  A second call while watching resolves at once and keeps the first call's options.
    *  Rejects with "denied" / "unavailable". */
   startWatch(options?: GeoOptions): void | Promise<void>

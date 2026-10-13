@@ -2,8 +2,8 @@
 // The wire has ONE watch per session (startWatch / stopWatch + the `position` event); the
 // app-facing `Geolocation.watch(callback)` fans it out to its subscribers in sdk/.
 //
-// A session opens without a prompt. The OS permission prompt belongs to the first call that needs
-// the position.
+// A session opens without a prompt. The OS permission is the calls' (`@permission location`): the
+// host asks before the first call that needs the position, the halves never do.
 
 import type { Service, f64 } from "lecodes-sdk/plugin"
 
@@ -38,11 +38,13 @@ export interface GeolocationEvents {
 
 export interface Geolocation extends Service<"geolocation", GeolocationParams, GeolocationEvents> {
   /** One fix.
-   *  @rejects denied unavailable timeout */
+   *  @permission location
+   *  @rejects unavailable timeout */
   getCurrent(options?: GeoOptions): Promise<GeoPosition>
-  /** Start the session's watch; resolves once it is live (permission granted, provider started).
+  /** Start the session's watch; resolves once it is live (the provider started).
    *  A second call while watching resolves at once and keeps the first call's options.
-   *  @rejects denied unavailable */
+   *  @permission location
+   *  @rejects unavailable */
   startWatch(options?: GeoOptions): Promise<void>
   stopWatch(): Promise<void>
 }

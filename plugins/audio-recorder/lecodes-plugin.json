@@ -1,0 +1,21 @@
+{
+  "id": "audio-recorder",
+  "name": "Audio Recorder",
+  "version": "2.0.0",
+  "sdk": "^2.0.0",
+  "description": "Audio recording to a file — voice messages (AVAudioRecorder, MediaRecorder, the browser's MediaRecorder). The app's side is AudioRecorder.",
+  "ios": {
+    "module": "LeCodesAudioRecorder",
+    "register": "LeCodesAudioRecorderPlugin",
+    "infoPlist": {
+      "NSMicrophoneUsageDescription": "The app uses the microphone to record voice messages."
+    }
+  },
+  "android": {
+    "module": "lecodes-audio-recorder",
+    "register": "io.letary.lecodes.plugins.audiorecorder.LeCodesAudioRecorderPlugin"
+  },
+  "web": {
+    "register": "web/audio-recorder.ts"
+  }
+}

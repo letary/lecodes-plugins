@@ -17,6 +17,6 @@ object LeCodesGeolocationPlugin {
 
     fun register(engine: LecodesEngine, context: Context) {
         val appContext = context.applicationContext
-        GeolocationChannel.register(engine) { _, events -> GeolocationService(engine, appContext, events) }
+        GeolocationChannel.register(engine) { _, events -> GeolocationService(appContext, events) }
     }
 }

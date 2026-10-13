@@ -79,6 +79,14 @@ export interface CameraView extends View<"camera", CameraParams, CameraEvents> {
 - `@rejects` lists the codes a call can fail with. `@since <n>` marks a method added in version
   `n` of the contract: a half registers with the version it was generated from, and an app asks
   `supports("<method>")` before it calls one a host's half may be too old for.
+- `@permission <kind…>` (`camera`, `microphone`, `location`, `speech`) names the OS permissions a
+  call needs. The generated native glue asks the host's one permission service before the call and
+  rejects with `denied` when one was refused — the half never sees a dialog (the web half asks
+  nothing: the browser's API prompts itself). `lecodes plugin gen` holds the manifests to it: the
+  usage string in `ios.infoPlist`, the `<uses-permission>` in the Android manifest. A call whose
+  need depends on its arguments (webrtc's `getUserMedia`) asks by hand through the same service
+  (`engine.permissions.ensure`). A view that needs a permission to mount asks in its wrapper
+  (`prepareCamera`), through the SDK's `permissions`.
 - A contract describes the WIRE. The API an app sees (the wrapper in `sdk/`) may be higher: the
   map's wrapper turns marker items into GeoJSON and queues calls until the style has loaded.
 
@@ -125,7 +133,7 @@ export interface CameraView extends View<"camera", CameraParams, CameraEvents> {
 - `register` is the hand-written type a host calls: `static func register(in:)` on iOS,
   `fun register(engine, context)` on Android, the module that exports `register(host)` on the web.
 - iOS: `infoPlist` (usage strings), `entitlements`, `packages`. Android: `dependencies` (Maven; a
-  `platform:` prefix is a BoM), `gradlePlugins`; permissions and services are the half's own
+  `platform:` prefix is a BoM), `gradlePlugins`; `<uses-permission>` and services are the half's own
   `AndroidManifest.xml`. Web: `dependencies` (npm), `resources` — what the half asks of its bundler,
   handed to `register` under these names, so the half names no bundler.
 - `lecodes plugin gen` holds the manifest to the plugin's folders.
@@ -138,6 +146,8 @@ export interface CameraView extends View<"camera", CameraParams, CameraEvents> {
 | `qr-scanner` | view | `qrScanner` | yes, where the browser has `BarcodeDetector` |
 | `map` | view | `map` | yes |
 | `geolocation` | service | `geolocation` | yes |
+| `audio-recorder` | service | `audioRecorder` | yes: the browser's MediaRecorder (webm/opus, mp4 in Safari) |
+| `speech` | service | `speech` | yes, where the browser has `SpeechRecognition` (Chrome, Safari) |
 | `push` | service | `push` | no |
 | `browser` | service + view | `browser`, `webView` | yes: a popup, an iframe (own-origin pages) |
 | `webrtc` | service + view | `rtcMedia`, `rtcPeerConnection`, `rtcVideo` | yes: the browser's own WebRTC |

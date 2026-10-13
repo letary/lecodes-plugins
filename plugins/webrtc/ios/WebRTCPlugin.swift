@@ -21,7 +21,7 @@ public enum LeCodesWebRTCPlugin {
     public static let pluginId = "webrtc"
 
     public static func register(in engine: LeCodesEngine) {
-        RtcMediaChannel.register(in: engine) { _, events in RtcMediaService(events) }
+        RtcMediaChannel.register(in: engine) { _, events in RtcMediaService(engine.permissions, events) }
         RtcPeerConnectionChannel.register(in: engine) { configuration, events in RtcPeerConnectionSession(configuration, events) }
         RtcVideoChannel.register(in: engine) { params, events in RtcVideoView(params, events) }
     }

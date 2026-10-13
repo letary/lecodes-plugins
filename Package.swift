@@ -18,12 +18,14 @@ let package = Package(
     name: "lecodes-plugins",
     platforms: [.iOS(.v15)],
     products: [
+        .library(name: "LeCodesAudioRecorder", targets: ["LeCodesAudioRecorder"]),
         .library(name: "LeCodesBrowser", targets: ["LeCodesBrowser"]),
         .library(name: "LeCodesCamera", targets: ["LeCodesCamera"]),
         .library(name: "LeCodesGeolocation", targets: ["LeCodesGeolocation"]),
         .library(name: "LeCodesMap", targets: ["LeCodesMap"]),
         .library(name: "LeCodesPush", targets: ["LeCodesPush"]),
         .library(name: "LeCodesQRScanner", targets: ["LeCodesQRScanner"]),
+        .library(name: "LeCodesSpeech", targets: ["LeCodesSpeech"]),
         .library(name: "LeCodesWebRTC", targets: ["LeCodesWebRTC"]),
     ],
     dependencies: [
@@ -32,6 +34,12 @@ let package = Package(
         .package(url: "https://github.com/stasel/WebRTC", exact: "154.0.0"),
     ],
     targets: [
+        // audio-recorder
+        .target(
+            name: "LeCodesAudioRecorder",
+            dependencies: [.product(name: "LeCodes", package: "lecodes")],
+            path: "plugins/audio-recorder/ios"
+        ),
         // browser
         .target(
             name: "LeCodesBrowser",
@@ -67,6 +75,12 @@ let package = Package(
             name: "LeCodesQRScanner",
             dependencies: [.product(name: "LeCodes", package: "lecodes")],
             path: "plugins/qr-scanner/ios"
+        ),
+        // speech
+        .target(
+            name: "LeCodesSpeech",
+            dependencies: [.product(name: "LeCodes", package: "lecodes")],
+            path: "plugins/speech/ios"
         ),
         // webrtc
         .target(

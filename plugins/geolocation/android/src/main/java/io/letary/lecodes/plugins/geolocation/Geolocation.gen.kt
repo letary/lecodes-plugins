@@ -5,6 +5,7 @@ package io.letary.lecodes.plugins.geolocation
 
 import io.letary.lecodes.LecodesEngine
 import io.letary.lecodes.services.ChannelSettle
+import io.letary.lecodes.services.Permissions
 import io.letary.lecodes.services.PluginCode
 import io.letary.lecodes.services.PluginEmit
 import io.letary.lecodes.services.Reply
@@ -107,13 +108,15 @@ class GeolocationEvents(private val channel: PluginEmit) {
 interface GeolocationPlugin {
     /**
      * One fix.
+     * Needs the location permission: asked by the glue before the call, DENIED when refused.
      * Rejects with DENIED / UNAVAILABLE / TIMEOUT.
      */
     fun getCurrent(options: GeoOptions?, reply: Reply<GeoPosition, GeolocationCode>)
 
     /**
-     * Start the session's watch; resolves once it is live (permission granted, provider started).
+     * Start the session's watch; resolves once it is live (the provider started).
      * A second call while watching resolves at once and keeps the first call's options.
+     * Needs the location permission: asked by the glue before the call, DENIED when refused.
      * Rejects with DENIED / UNAVAILABLE.
      */
     fun startWatch(options: GeoOptions?, reply: Reply<Unit, GeolocationCode>)
@@ -136,23 +139,31 @@ object GeolocationChannel {
     fun register(engine: LecodesEngine, make: (params: GeolocationParams, events: GeolocationEvents) -> GeolocationPlugin) {
         engine.registerService(NAME, VERSION) { params, channel ->
             val plugin = make(GeolocationParams.read(Wire.reader(params)) ?: GeolocationParams(), GeolocationEvents { event, packed -> channel.emitPacked(event, packed) })
-            Services.Instance(onCall = { call -> GeolocationGlue.call(plugin, call.method, call.reader(), call) }, onClose = { plugin.close() })
+            Services.Instance(onCall = { call -> GeolocationGlue.call(plugin, engine.permissions, call.method, call.reader(), call) }, onClose = { plugin.close() })
         }
     }
 }
 
 /** Reads a call off the wire and hands it to the plugin; a malformed call never reaches it. */
 internal object GeolocationGlue {
-    fun call(plugin: GeolocationPlugin, method: String, r: PackedReader, settle: ChannelSettle) {
+    fun call(plugin: GeolocationPlugin, permissions: Permissions, method: String, r: PackedReader, settle: ChannelSettle) {
         val n = r.beginArray()   // the arguments, in their order
         when (method) {
             "getCurrent" -> {
                 val a0 = if (0 < n && !r.isNull()) (GeoOptions.read(r) ?: return settle.reject("bad arguments — Geolocation.getCurrent: options")) else { if (0 < n) r.skip(); null }
-                plugin.getCurrent(a0, Reply<GeoPosition, GeolocationCode>(settle) { v, w -> v.write(w) })
+                val reply = Reply<GeoPosition, GeolocationCode>(settle) { v, w -> v.write(w) }
+                permissions.ensure(listOf(Permissions.Kind.LOCATION)) { granted ->
+                    if (!granted) reply.reject(GeolocationCode.DENIED)
+                    else plugin.getCurrent(a0, reply)
+                }
             }
             "startWatch" -> {
                 val a0 = if (0 < n && !r.isNull()) (GeoOptions.read(r) ?: return settle.reject("bad arguments — Geolocation.startWatch: options")) else { if (0 < n) r.skip(); null }
-                plugin.startWatch(a0, Reply<Unit, GeolocationCode>(settle, null))
+                val reply = Reply<Unit, GeolocationCode>(settle, null)
+                permissions.ensure(listOf(Permissions.Kind.LOCATION)) { granted ->
+                    if (!granted) reply.reject(GeolocationCode.DENIED)
+                    else plugin.startWatch(a0, reply)
+                }
             }
             "stopWatch" -> {
                 plugin.stopWatch(Reply<Unit, GeolocationCode>(settle, null))
