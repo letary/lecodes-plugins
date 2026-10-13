@@ -1,0 +1,22 @@
+{
+  "id": "browser",
+  "name": "Browser",
+  "version": "2.0.0",
+  "sdk": "^2.0.0",
+  "description": "Web content inside the app: the system browser sheet (SFSafariViewController / ASWebAuthenticationSession, Chrome Custom Tabs, a popup) for pages, OAuth and hosted checkouts, and an embedded web view (WKWebView, android.webkit.WebView, an iframe) with navigation interception and a message bridge. The app's side is Browser.open() and WebView().",
+  "ios": {
+    "module": "LeCodesBrowser",
+    "register": "LeCodesBrowserPlugin"
+  },
+  "android": {
+    "module": "lecodes-browser",
+    "register": "io.letary.lecodes.plugins.browser.LeCodesBrowserPlugin",
+    "dependencies": [
+      "androidx.browser:browser:1.8.0",
+      "androidx.webkit:webkit:1.14.0"
+    ]
+  },
+  "web": {
+    "register": "web/browser.ts"
+  }
+}
