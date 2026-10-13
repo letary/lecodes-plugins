@@ -23,6 +23,9 @@ final class WebViewPage: NSObject, WebViewPlugin, WKNavigationDelegate, WKUIDele
     private let bridge: Bool
     private let openExternal: Bool
     private var stops: [String]
+    /// A finished page whose title WebKit has not reported yet (see didFinish).
+    private var pendingLoad: (url: String, timeout: DispatchWorkItem)?
+    private var titleObservation: NSKeyValueObservation?
 
     var view: UIView { webView }
 
@@ -47,6 +50,10 @@ final class WebViewPage: NSObject, WebViewPlugin, WKNavigationDelegate, WKUIDele
         webView.uiDelegate = self
         webView.allowsBackForwardNavigationGestures = true
         webView.scrollView.contentInsetAdjustmentBehavior = .never
+        titleObservation = webView.observe(\.title) { [weak self] webView, _ in
+            guard let self, self.pendingLoad != nil, !(webView.title ?? "").isEmpty else { return }
+            self.flushLoad()
+        }
         if let url = params.url, let target = URL(string: url) { webView.load(URLRequest(url: target)) }
     }
 
@@ -98,6 +105,9 @@ final class WebViewPage: NSObject, WebViewPlugin, WKNavigationDelegate, WKUIDele
     }
 
     func destroy() {
+        pendingLoad?.timeout.cancel()
+        pendingLoad = nil
+        titleObservation = nil
         if bridge { webView.configuration.userContentController.removeScriptMessageHandler(forName: "lecodes") }
         webView.stopLoading()
         webView.navigationDelegate = nil
@@ -110,6 +120,7 @@ final class WebViewPage: NSObject, WebViewPlugin, WKNavigationDelegate, WKUIDele
         guard let url = action.request.url else { return decisionHandler(.allow) }
         let text = url.absoluteString
         let isMain = action.targetFrame?.isMainFrame ?? true
+        if isMain { flushLoad() }   // the previous page's `load` before anything of the next one
         if isMain, stops.contains(where: { text.hasPrefix($0) }) {
             events.stop(url: text)
             return decisionHandler(.cancel)
@@ -123,8 +134,25 @@ final class WebViewPage: NSObject, WebViewPlugin, WKNavigationDelegate, WKUIDele
         decisionHandler(.allow)
     }
 
+    /// `load` carries the page's title, which WebKit reports just AFTER didFinish (on iOS 26 `title`
+    /// is still empty here): wait for it through the title's KVO, at most `titleWait` (a page with no
+    /// title at all).
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
-        events.load(url: webView.url?.absoluteString ?? "", title: webView.title ?? "")
+        flushLoad()
+        let url = webView.url?.absoluteString ?? ""
+        if let title = webView.title, !title.isEmpty { return events.load(url: url, title: title) }
+        let timeout = DispatchWorkItem { [weak self] in self?.flushLoad() }
+        pendingLoad = (url, timeout)
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.titleWait, execute: timeout)
+    }
+
+    private static let titleWait: TimeInterval = 0.5
+
+    private func flushLoad() {
+        guard let pending = pendingLoad else { return }
+        pendingLoad = nil
+        pending.timeout.cancel()
+        events.load(url: pending.url, title: webView.title ?? "")
     }
 
     func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) { report(error) }
