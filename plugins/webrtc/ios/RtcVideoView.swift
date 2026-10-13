@@ -36,9 +36,12 @@ final class RtcVideoView: NSObject, RtcVideoPlugin, RTCVideoViewDelegate {
     private func show(_ trackId: String?) -> Bool {
         if let track { track.remove(renderer) }
         track = nil
+        // Without a track the Metal view would keep its last frame: hidden, the black container shows.
+        renderer.isHidden = true
         guard let trackId else { return true }
         guard let found = RtcEngine.shared.track(trackId), let video = found.track as? RTCVideoTrack else { return false }
         track = video
+        renderer.isHidden = false
         video.add(renderer)
         return true
     }

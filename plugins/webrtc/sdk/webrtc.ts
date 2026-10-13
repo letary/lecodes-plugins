@@ -507,6 +507,9 @@ export class RTCPeerConnection extends RTCEventTarget {
    *  after the promise, and the app's signaling expects the description first. */
   private _settingLocal = 0
   private _heldCandidates: (RTCIceCandidate | null)[] = []
+  /** After the app's close(): what the host still says of the dying session is not an event (the
+   *  browser fires none for close()). */
+  private _closedByApp = false
 
   onnegotiationneeded: RTCEventListener<RTCEvent<RTCPeerConnection>> | null = null
   onicecandidate: RTCEventListener<RTCPeerConnectionIceEvent> | null = null
@@ -522,33 +525,34 @@ export class RTCPeerConnection extends RTCEventTarget {
     if (!RtcPeerConnectionBase.supports(PC_NAME)) throw unsupported("RTCPeerConnection", PC_NAME, "service")
     this._configuration = configuration
     const s = this._s = new RtcPeerConnectionBase(configurationWire(configuration))
-    s.on("negotiationNeeded", () => this._dispatch({ type: "negotiationneeded" }))
-    s.on("iceCandidate", ({ candidate }) => {
+    const on: typeof s.on = (event, callback) => s.on(event, ((payload?: any) => { if (!this._closedByApp) (callback as any)(payload) }) as any)
+    on("negotiationNeeded", () => this._dispatch({ type: "negotiationneeded" }))
+    on("iceCandidate", ({ candidate }) => {
       const ice = candidate ? new RTCIceCandidate(candidate) : null
       if (this._settingLocal > 0) this._heldCandidates.push(ice)
       else this._dispatch({ type: "icecandidate", candidate: ice })
     })
-    s.on("signalingStateChange", ({ state }) => { this._signaling = state; this._dispatch({ type: "signalingstatechange" }) })
-    s.on("iceGatheringStateChange", ({ state }) => { this._gathering = state; this._dispatch({ type: "icegatheringstatechange" }) })
-    s.on("iceConnectionStateChange", ({ state }) => { this._ice = state; this._dispatch({ type: "iceconnectionstatechange" }) })
-    s.on("connectionStateChange", ({ state }) => { this._connection = state; this._dispatch({ type: "connectionstatechange" }) })
-    s.on("track", ({ track, streamIds, transceiverId }) => { this._onTrack(track, streamIds, transceiverId).catch(() => {}) })
-    s.on("trackMute", ({ trackId, muted }) => tracks.get(trackId)?._setMuted(muted))
-    s.on("trackEnded", ({ trackId }) => tracks.get(trackId)?._ended())
-    s.on("dataChannel", info => {
+    on("signalingStateChange", ({ state }) => { this._signaling = state; this._dispatch({ type: "signalingstatechange" }) })
+    on("iceGatheringStateChange", ({ state }) => { this._gathering = state; this._dispatch({ type: "icegatheringstatechange" }) })
+    on("iceConnectionStateChange", ({ state }) => { this._ice = state; this._dispatch({ type: "iceconnectionstatechange" }) })
+    on("connectionStateChange", ({ state }) => { this._connection = state; this._dispatch({ type: "connectionstatechange" }) })
+    on("track", ({ track, streamIds, transceiverId }) => { this._onTrack(track, streamIds, transceiverId).catch(() => {}) })
+    on("trackMute", ({ trackId, muted }) => tracks.get(trackId)?._setMuted(muted))
+    on("trackEnded", ({ trackId }) => tracks.get(trackId)?._ended())
+    on("dataChannel", info => {
       const channel = new RTCDataChannel(this, info.label, {}, info)
       this._channels.set(info.id, channel)
       this._dispatch({ type: "datachannel", channel })
     })
-    s.on("dataChannelStateChange", ({ id, state }) => {
+    on("dataChannelStateChange", ({ id, state }) => {
       const channel = this._channels.get(id)
       if (!channel) return
       channel._setState(state)
       if (state === "closed") this._channels.delete(id)
     })
-    s.on("dataChannelMessage", ({ id, text, binary }) => this._channels.get(id)?._message(text, binary))
-    s.on("dataChannelError", ({ id, message }) => this._channels.get(id)?._dispatch({ type: "error", message }))
-    s.on("dataChannelBufferedAmountLow", ({ id }) => this._channels.get(id)?._dispatch({ type: "bufferedamountlow" }))
+    on("dataChannelMessage", ({ id, text, binary }) => this._channels.get(id)?._message(text, binary))
+    on("dataChannelError", ({ id, message }) => this._channels.get(id)?._dispatch({ type: "error", message }))
+    on("dataChannelBufferedAmountLow", ({ id }) => this._channels.get(id)?._dispatch({ type: "bufferedamountlow" }))
   }
 
   get localDescription(): RTCSessionDescription | null { return this._local }
@@ -652,6 +656,7 @@ export class RTCPeerConnection extends RTCEventTarget {
    *  channel closes. */
   close(): void {
     if (this._connection === "closed") return
+    this._closedByApp = true
     this._connection = "closed"
     this._signaling = "closed"
     this._ice = "closed"

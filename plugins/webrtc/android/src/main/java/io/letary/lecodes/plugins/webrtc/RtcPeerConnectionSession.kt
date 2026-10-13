@@ -9,6 +9,14 @@
 //  Threading: the calls arrive on the main thread, libwebrtc's observers on its own threads; the
 //  tables are concurrent, the replies and the events go from any thread.
 //
+//  libwebrtc's Java wrappers are TRANSIENT: every `pc.transceivers` / `senders` / `receivers` call
+//  DISPOSES the wrappers the previous call returned (and, through them, their senders, receivers
+//  and the receivers' track wrappers). So nothing here keeps a wrapper across calls: a sender or a
+//  transceiver is keyed by its NATIVE id (`sender.id()`, `receiver.id()` — stable for the life of
+//  the connection) and a live wrapper is looked up at the moment of a call, on the main thread
+//  only. A received track's wrapper in the registry is the OBSERVER's (`onAddTrack`, never
+//  disposed) once there is one; before any media it is the transceiver's, refreshed at every sync.
+//
 
 package io.letary.lecodes.plugins.webrtc
 
@@ -41,10 +49,12 @@ class RtcPeerConnectionSession(
 ) : RtcPeerConnectionPlugin {
 
     private val pc: PeerConnection
-    private val senders = ConcurrentHashMap<String, RtpSender>()
-    private val senderIds = ConcurrentHashMap<RtpSender, String>()
-    private val transceivers = ConcurrentHashMap<String, RtpTransceiver>()
-    private val transceiverIds = ConcurrentHashMap<RtpTransceiver, String>()
+    /** The wire's sender id ↔ libwebrtc's sender id. */
+    private val senderIds = ConcurrentHashMap<String, String>()
+    private val nativeSenders = ConcurrentHashMap<String, String>()
+    /** The wire's transceiver id ↔ libwebrtc's RECEIVER id (every transceiver has one from the start). */
+    private val transceiverIds = ConcurrentHashMap<String, String>()
+    private val nativeReceivers = ConcurrentHashMap<String, String>()
     private val channels = ConcurrentHashMap<String, RtcDataChannel>()
     /** The received tracks' registry ids by libwebrtc's track id (unique within a connection). */
     private val received = ConcurrentHashMap<String, String>()
@@ -91,34 +101,57 @@ class RtcPeerConnectionSession(
 
     // ── ids ──────────────────────────────────────────────────────────────────
 
-    private fun idOf(sender: RtpSender): String = senderIds.getOrPut(sender) {
-        RtcEngine.allocate("sender").also { senders[it] = sender }
+    private fun idOfSender(nativeId: String): String = senderIds.getOrPut(nativeId) {
+        RtcEngine.allocate("sender").also { nativeSenders[it] = nativeId }
     }
 
-    private fun idOf(transceiver: RtpTransceiver): String = transceiverIds.getOrPut(transceiver) {
-        RtcEngine.allocate("transceiver").also { transceivers[it] = transceiver }
+    private fun idOfTransceiver(nativeReceiverId: String): String = transceiverIds.getOrPut(nativeReceiverId) {
+        RtcEngine.allocate("transceiver").also { nativeReceivers[it] = nativeReceiverId }
     }
 
-    /** The registry entry of a received track, made when first seen. */
-    private fun receivedTrack(track: MediaStreamTrack): RtcTrack {
-        received[track.id()]?.let { id -> RtcEngine.track(id)?.let { return it } }
-        val id = received.getOrPut(track.id()) { RtcEngine.allocate(if (track.kind() == MediaStreamTrack.VIDEO_TRACK_KIND) "rvideo" else "raudio") }
-        val entry = RtcTrack(id, track, remote = true, label = track.id())
+    /** The live transceivers: a fresh list (the previous one's wrappers are gone now). Main thread. */
+    private fun liveTransceivers(): List<RtpTransceiver> = pc.transceivers
+
+    private fun transceiver(id: String): RtpTransceiver? {
+        val native = nativeReceivers[id] ?: return null
+        return liveTransceivers().firstOrNull { it.receiver.id() == native }
+    }
+
+    private fun sender(id: String): RtpSender? {
+        val native = nativeSenders[id] ?: return null
+        return liveTransceivers().map { it.sender }.firstOrNull { it.id() == native }
+    }
+
+    /** The registry entry of a received track, made when first seen. `owned` = the wrapper is the
+     *  observer's, which libwebrtc never disposes: it replaces a transient one and stays. */
+    private fun receivedTrack(track: MediaStreamTrack, owned: Boolean): RtcTrack {
+        val nativeId = track.id()
+        received[nativeId]?.let { id ->
+            RtcEngine.track(id)?.let { entry ->
+                if (owned && !entry.stable) { entry.track = track; entry.stable = true }
+                else if (!entry.stable && !entry.live) entry.track = track
+                return entry
+            }
+        }
+        val id = received.getOrPut(nativeId) { RtcEngine.allocate(if (track.kind() == MediaStreamTrack.VIDEO_TRACK_KIND) "rvideo" else "raudio") }
+        val entry = RtcTrack(id, track, remote = true, label = nativeId, stable = owned)
         RtcEngine.add(entry)
         return entry
     }
 
-    private fun senderInfo(sender: RtpSender): SenderInfo {
-        val track = sender.track()
-        val trackId = track?.let { RtcEngine.trackId(it) ?: received[it.id()] }
-        return SenderInfo(idOf(sender), trackId)
+    /** The wire's id of a track by libwebrtc's id: a local track's is its own, a received one's is the registry's. */
+    private fun trackIdOf(native: MediaStreamTrack?): String? {
+        val nativeId = runCatching { native?.id() }.getOrNull() ?: return null
+        return RtcEngine.track(nativeId)?.id ?: received[nativeId]
     }
 
+    private fun senderInfo(sender: RtpSender): SenderInfo = SenderInfo(idOfSender(sender.id()), trackIdOf(sender.track()))
+
     private fun transceiverInfo(t: RtpTransceiver): TransceiverInfo {
-        val receiverTrack = t.receiver.track()?.let { receivedTrack(it).info }
+        val receiverTrack = t.receiver.track()?.let { receivedTrack(it, owned = false).info }
             ?: TrackInfo(id = "", kind = if (t.mediaType == MediaStreamTrack.MediaType.MEDIA_TYPE_VIDEO) MediaKind.VIDEO else MediaKind.AUDIO, label = "", enabled = false)
         return TransceiverInfo(
-            id = idOf(t), mid = t.mid, direction = direction(t.direction), currentDirection = t.currentDirection?.let { direction(it) },
+            id = idOfTransceiver(t.receiver.id()), mid = t.mid, direction = direction(t.direction), currentDirection = t.currentDirection?.let { direction(it) },
             sender = senderInfo(t.sender), receiverTrack = receiverTrack, stopped = t.isStopped,
         )
     }
@@ -233,20 +266,20 @@ class RtcPeerConnectionSession(
 
     override fun removeTrack(senderId: String, reply: Reply<Unit, RtcPeerConnectionCode>) {
         if (!open(reply)) return
-        val sender = senders[senderId] ?: return reply.reject(RtcPeerConnectionCode.NOT_FOUND)
+        val sender = sender(senderId) ?: return reply.reject(RtcPeerConnectionCode.NOT_FOUND)
         pc.removeTrack(sender)
         reply.resolve()
     }
 
     override fun replaceTrack(senderId: String, trackId: String?, reply: Reply<Unit, RtcPeerConnectionCode>) {
         if (!open(reply)) return
-        val sender = senders[senderId] ?: return reply.reject(RtcPeerConnectionCode.NOT_FOUND)
+        val sender = sender(senderId) ?: return reply.reject(RtcPeerConnectionCode.NOT_FOUND)
         val track = if (trackId == null) null else RtcEngine.track(trackId)?.track ?: return reply.reject(RtcPeerConnectionCode.NOT_FOUND)
         if (sender.setTrack(track, false)) reply.resolve() else reply.reject(RtcPeerConnectionCode.FAILED)
     }
 
     override fun getSenderParameters(senderId: String, reply: Reply<SenderParameters, RtcPeerConnectionCode>) {
-        val sender = senders[senderId] ?: return reply.reject(RtcPeerConnectionCode.NOT_FOUND)
+        val sender = sender(senderId) ?: return reply.reject(RtcPeerConnectionCode.NOT_FOUND)
         val encodings = sender.parameters.encodings.map { e ->
             Encoding(rid = e.rid, active = e.active, maxBitrate = e.maxBitrateBps, maxFramerate = e.maxFramerate?.toDouble(), scaleResolutionDownBy = e.scaleResolutionDownBy)
         }
@@ -254,7 +287,7 @@ class RtcPeerConnectionSession(
     }
 
     override fun setSenderParameters(senderId: String, parameters: SenderParameters, reply: Reply<Unit, RtcPeerConnectionCode>) {
-        val sender = senders[senderId] ?: return reply.reject(RtcPeerConnectionCode.NOT_FOUND)
+        val sender = sender(senderId) ?: return reply.reject(RtcPeerConnectionCode.NOT_FOUND)
         val current = sender.parameters
         // The encodings are matched by position (by rid when both have one): what the app says wins.
         current.encodings.forEachIndexed { i, encoding ->
@@ -289,11 +322,11 @@ class RtcPeerConnectionSession(
     }
 
     override fun getTransceivers(reply: Reply<List<TransceiverInfo>, RtcPeerConnectionCode>) {
-        reply.resolve(pc.transceivers.map { transceiverInfo(it) })
+        reply.resolve(liveTransceivers().map { transceiverInfo(it) })
     }
 
     override fun setTransceiverDirection(transceiverId: String, direction: TransceiverDirection, reply: Reply<Unit, RtcPeerConnectionCode>) {
-        val transceiver = transceivers[transceiverId] ?: return reply.reject(RtcPeerConnectionCode.NOT_FOUND)
+        val transceiver = transceiver(transceiverId) ?: return reply.reject(RtcPeerConnectionCode.NOT_FOUND)
         try {
             transceiver.direction = direction(direction)
             reply.resolve()
@@ -303,7 +336,7 @@ class RtcPeerConnectionSession(
     }
 
     override fun stopTransceiver(transceiverId: String, reply: Reply<Unit, RtcPeerConnectionCode>) {
-        val transceiver = transceivers[transceiverId] ?: return reply.reject(RtcPeerConnectionCode.NOT_FOUND)
+        val transceiver = transceiver(transceiverId) ?: return reply.reject(RtcPeerConnectionCode.NOT_FOUND)
         transceiver.stopStandard()
         reply.resolve()
     }
@@ -324,10 +357,11 @@ class RtcPeerConnectionSession(
             reply.resolve(out)
         }
         val track = trackId?.let { RtcEngine.track(it) }
-        if (track == null) return pc.getStats(done)
-        val sender = pc.senders.firstOrNull { it.track()?.id() == track.track.id() }
+        val nativeId = track?.let { runCatching { it.track.id() }.getOrNull() } ?: return pc.getStats(done)
+        val live = liveTransceivers()
+        val sender = live.map { it.sender }.firstOrNull { runCatching { it.track()?.id() }.getOrNull() == nativeId }
         if (sender != null) return pc.getStats(sender, done)
-        val receiver = pc.receivers.firstOrNull { it.track()?.id() == track.track.id() }
+        val receiver = live.map { it.receiver }.firstOrNull { runCatching { it.track()?.id() }.getOrNull() == nativeId }
         if (receiver != null) return pc.getStats(receiver, done)
         pc.getStats(done)
     }
@@ -463,10 +497,11 @@ class RtcPeerConnectionSession(
         override fun onRenegotiationNeeded() = events.negotiationNeeded()
 
         override fun onAddTrack(receiver: RtpReceiver, streams: Array<out MediaStream>) {
+            // libwebrtc's thread: no `pc.transceivers` here (it would dispose what the main thread
+            // holds); the transceiver's id is the receiver's.
             val track = receiver.track() ?: return
-            val entry = receivedTrack(track)
-            val transceiver = pc.transceivers.firstOrNull { it.receiver.id() == receiver.id() }
-            events.track(entry.info, streams.map { it.id }, transceiver?.let { idOf(it) } ?: "")
+            val entry = receivedTrack(track, owned = true)
+            events.track(entry.info, streams.map { it.id }, idOfTransceiver(receiver.id()))
         }
 
         override fun onRemoveTrack(receiver: RtpReceiver) {

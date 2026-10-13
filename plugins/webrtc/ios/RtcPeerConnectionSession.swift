@@ -9,6 +9,11 @@
 //  Threading: the calls arrive on the main thread, libwebrtc's delegates on its signaling thread;
 //  the tables are under one lock, the replies and the events go from any thread.
 //
+//  libwebrtc's ObjC wrappers are TRANSIENT: `pc.transceivers` / `senders` make new wrapper objects
+//  at every call. So a sender or a transceiver is keyed by its NATIVE id (`senderId`, `receiverId`
+//  — stable for the life of the connection), never by a wrapper's identity, and a live wrapper is
+//  looked up at the moment of a call.
+//
 
 import Foundation
 import WebRTC
@@ -21,10 +26,12 @@ final class RtcPeerConnectionSession: NSObject, RtcPeerConnectionPlugin, RTCPeer
     private let pc: RTCPeerConnection
     private let sessionId: String
     private let lock = NSLock()
-    private var senders: [String: RTCRtpSender] = [:]
-    private var senderIds: [ObjectIdentifier: String] = [:]
-    private var transceivers: [String: RTCRtpTransceiver] = [:]
-    private var transceiverIds: [ObjectIdentifier: String] = [:]
+    /// The wire's sender id ↔ libwebrtc's sender id.
+    private var senderIds: [String: String] = [:]
+    private var nativeSenders: [String: String] = [:]
+    /// The wire's transceiver id ↔ libwebrtc's RECEIVER id (every transceiver has one from the start).
+    private var transceiverIds: [String: String] = [:]
+    private var nativeReceivers: [String: String] = [:]
     private var channels: [String: RtcDataChannel] = [:]
     /// The received tracks' registry ids by libwebrtc's track id (unique within a connection).
     private var received: [String: String] = [:]
@@ -79,21 +86,21 @@ final class RtcPeerConnectionSession: NSObject, RtcPeerConnectionPlugin, RTCPeer
 
     private func id(of sender: RTCRtpSender) -> String {
         lock.lock(); defer { lock.unlock() }
-        let key = ObjectIdentifier(sender)
-        if let id = senderIds[key] { return id }
+        if let id = senderIds[sender.senderId] { return id }
         let id = engine.allocate("sender")
-        senderIds[key] = id
-        senders[id] = sender
+        senderIds[sender.senderId] = id
+        nativeSenders[id] = sender.senderId
         return id
     }
 
-    private func id(of transceiver: RTCRtpTransceiver) -> String {
+    private func id(of transceiver: RTCRtpTransceiver) -> String { id(ofReceiver: transceiver.receiver.receiverId) }
+
+    private func id(ofReceiver receiverId: String) -> String {
         lock.lock(); defer { lock.unlock() }
-        let key = ObjectIdentifier(transceiver)
-        if let id = transceiverIds[key] { return id }
+        if let id = transceiverIds[receiverId] { return id }
         let id = engine.allocate("transceiver")
-        transceiverIds[key] = id
-        transceivers[id] = transceiver
+        transceiverIds[receiverId] = id
+        nativeReceivers[id] = receiverId
         return id
     }
 
@@ -270,14 +277,21 @@ final class RtcPeerConnectionSession: NSObject, RtcPeerConnectionPlugin, RTCPeer
         reply.resolve()
     }
 
+    /// A live wrapper of the sender the wire names, looked up now.
     private func sender(_ id: String) -> RTCRtpSender? {
-        lock.lock(); defer { lock.unlock() }
-        return senders[id]
+        lock.lock()
+        let native = nativeSenders[id]
+        lock.unlock()
+        guard let native else { return nil }
+        return pc.senders.first(where: { $0.senderId == native })
     }
 
     private func transceiver(_ id: String) -> RTCRtpTransceiver? {
-        lock.lock(); defer { lock.unlock() }
-        return transceivers[id]
+        lock.lock()
+        let native = nativeReceivers[id]
+        lock.unlock()
+        guard let native else { return nil }
+        return pc.transceivers.first(where: { $0.receiver.receiverId == native })
     }
 
     func getSenderParameters(_ senderId: String, _ reply: Reply<SenderParameters, RtcPeerConnectionCode>) {
@@ -509,9 +523,7 @@ final class RtcPeerConnectionSession: NSObject, RtcPeerConnectionPlugin, RTCPeer
     func peerConnection(_ peerConnection: RTCPeerConnection, didAdd rtpReceiver: RTCRtpReceiver, streams mediaStreams: [RTCMediaStream]) {
         guard let track = rtpReceiver.track else { return }
         let entry = receivedTrack(track)
-        let transceiver = pc.transceivers.first(where: { $0.receiver.receiverId == rtpReceiver.receiverId })
-        let transceiverId = transceiver.map { id(of: $0) } ?? ""
-        events.track(track: entry.info, streamIds: mediaStreams.map { $0.streamId }, transceiverId: transceiverId)
+        events.track(track: entry.info, streamIds: mediaStreams.map { $0.streamId }, transceiverId: id(ofReceiver: rtpReceiver.receiverId))
     }
 
     func peerConnection(_ peerConnection: RTCPeerConnection, didRemove rtpReceiver: RTCRtpReceiver) {

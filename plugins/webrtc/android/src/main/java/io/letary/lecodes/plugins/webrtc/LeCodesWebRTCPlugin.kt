@@ -48,20 +48,27 @@ object LeCodesWebRTCPlugin {
 }
 
 /** A track the app holds, by the id the wire names it with: the libwebrtc track, and for a local
- *  video one its capture. */
+ *  video one its capture. A received track's wrapper may be TRANSIENT (libwebrtc disposes the
+ *  wrappers of a transceiver list when the next list is asked for): it is refreshed by the session,
+ *  and `stable` once the observer's own wrapper (never disposed) took its place. */
 class RtcTrack(
     val id: String,
-    val track: MediaStreamTrack,
+    track: MediaStreamTrack,
     val remote: Boolean,
     val label: String,
     /** A local video track's camera. */
     val capture: RtcCapture? = null,
     /** A local audio track's source, released with the track. */
     val audioSource: AudioSource? = null,
+    @Volatile var stable: Boolean = !remote,
 ) {
-    val kind: MediaKind get() = if (track.kind() == MediaStreamTrack.VIDEO_TRACK_KIND) MediaKind.VIDEO else MediaKind.AUDIO
+    @Volatile var track: MediaStreamTrack = track
+    val kind: MediaKind = if (track.kind() == MediaStreamTrack.VIDEO_TRACK_KIND) MediaKind.VIDEO else MediaKind.AUDIO
 
-    val info: TrackInfo get() = TrackInfo(id = id, kind = kind, label = label, enabled = track.enabled(), muted = null)
+    /** Whether the wrapper still stands (a disposed one throws on every call). */
+    val live: Boolean get() = runCatching { track.id(); true }.getOrDefault(false)
+
+    val info: TrackInfo get() = TrackInfo(id = id, kind = kind, label = label, enabled = runCatching { track.enabled() }.getOrDefault(true), muted = null)
 }
 
 /** The one libwebrtc of the process, the tracks by id, the audio mode. Every member is safe from
@@ -103,7 +110,10 @@ object RtcEngine {
     fun allTracks(): Collection<RtcTrack> = tracks.values
 
     /** The registry id of a libwebrtc track the app holds; null for one it never saw. */
-    fun trackId(of: MediaStreamTrack): String? = tracks.values.firstOrNull { it.track === of || it.track.id() == of.id() }?.id
+    fun trackId(of: MediaStreamTrack): String? {
+        val nativeId = runCatching { of.id() }.getOrNull() ?: return null
+        return tracks.values.firstOrNull { it.track === of || runCatching { it.track.id() }.getOrNull() == nativeId }?.id
+    }
 
     /** The audio mode of a call. Set at the first capture, never at registration. */
     fun configureAudio(context: Context) {

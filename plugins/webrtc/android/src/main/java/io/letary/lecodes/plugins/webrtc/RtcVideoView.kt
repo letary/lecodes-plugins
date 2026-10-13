@@ -23,6 +23,7 @@ class RtcVideoView(context: Context, params: RtcVideoParams, private val events:
     private val container = FrameLayout(context).apply { setBackgroundColor(Color.BLACK) }
     private val renderer = SurfaceViewRenderer(context)
     private var track: VideoTrack? = null
+    private var shown: String? = null
 
     override val view: View get() = container
 
@@ -43,8 +44,11 @@ class RtcVideoView(context: Context, params: RtcVideoParams, private val events:
     }
 
     private fun show(trackId: String?): Boolean {
-        track?.removeSink(renderer)
+        // The wrapper may have been disposed by libwebrtc meanwhile (a received track's): the sink
+        // is native, so the registry's current wrapper removes it; a dead one is let go.
+        track?.let { old -> runCatching { old.removeSink(renderer) }.onFailure { shown?.let { id -> (RtcEngine.track(id)?.track as? VideoTrack)?.let { t -> runCatching { t.removeSink(renderer) } } } } }
         track = null
+        shown = trackId
         if (trackId == null) { renderer.clearImage(); return true }
         val found = RtcEngine.track(trackId)?.track as? VideoTrack ?: return false
         track = found
