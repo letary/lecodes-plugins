@@ -1,0 +1,32 @@
+{
+  "id": "webrtc",
+  "name": "WebRTC",
+  "version": "2.0.0",
+  "sdk": "^2.0.0",
+  "description": "Real-time audio, video and data between peers: the W3C WebRTC API (RTCPeerConnection, MediaStream, RTCDataChannel, getUserMedia) over libwebrtc on iOS and Android and the browser's stack on the web, plus RTCVideoView to draw a track. Signaling is the app's; an SFU client can run over it.",
+  "ios": {
+    "module": "LeCodesWebRTC",
+    "register": "LeCodesWebRTCPlugin",
+    "infoPlist": {
+      "NSCameraUsageDescription": "The app uses the camera for video calls.",
+      "NSMicrophoneUsageDescription": "The app uses the microphone for calls."
+    },
+    "packages": [
+      {
+        "url": "https://github.com/stasel/WebRTC",
+        "exact": "154.0.0",
+        "products": ["WebRTC"]
+      }
+    ]
+  },
+  "android": {
+    "module": "lecodes-webrtc",
+    "register": "io.letary.lecodes.plugins.webrtc.LeCodesWebRTCPlugin",
+    "dependencies": [
+      "io.getstream:stream-webrtc-android:1.3.10"
+    ]
+  },
+  "web": {
+    "register": "web/webrtc.ts"
+  }
+}

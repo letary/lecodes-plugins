@@ -131,6 +131,7 @@ export interface CameraView extends View<"camera", CameraParams, CameraEvents> {
 | `geolocation` | service | `geolocation` | yes |
 | `push` | service | `push` | no |
 | `browser` | service + view | `browser`, `webView` | yes: a popup, an iframe (own-origin pages) |
+| `webrtc` | service + view | `rtcMedia`, `rtcPeerConnection`, `rtcVideo` | yes: the browser's own WebRTC |
 
 ## Naming
 
