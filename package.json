@@ -8,5 +8,8 @@
   "devDependencies": {
     "lecodes-sdk": "^2.0.0",
     "typescript": "~5.8.3"
+  },
+  "lecodes": {
+    "iosSdkPath": "../apple/lecodes"
   }
 }

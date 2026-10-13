@@ -43,6 +43,15 @@ lecodes plugin gen            # write them
 lecodes plugin gen --check    # fail on a stale one (CI)
 ```
 
+`Package.swift` at the root is generated too: the iOS halves as one SwiftPM package — a target and a
+product per plugin (the manifest's `ios.module`, its `ios.packages` as dependencies). Each plugin is
+its own module, so two plugins may name a type alike, and an Xcode project links a plugin as a
+product instead of compiling its folder. The SDK the package depends on is the LeCodes package on
+disk: `LECODES_IOS_SDK_PATH`, else what this repo's `package.json` names under `lecodes.iosSdkPath`
+(`../apple/lecodes`: this repo is a submodule of LeCodes core at `hosts/plugins`), else the sibling
+`../lecodes`. A shell made by
+`lecodes app sync` vendors the sources into its own targets instead.
+
 `sdk/<id>.ts` is the hand-written part of the wrapper, and optional: without it the generated file
 exports the public API itself — the wire's methods and a typed `on(event, …)`.
 
