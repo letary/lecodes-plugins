@@ -1,0 +1,24 @@
+{
+  "id": "ar",
+  "name": "AR",
+  "version": "2.0.0",
+  "sdk": "^2.0.0",
+  "description": "World tracking over the device camera — ARKit on iOS, ARCore on Android, the camera under the scene turned by the sensors on the web: planes, hit tests, anchors, image targets, the estimated light. The app's side is ARScene.",
+  "ios": {
+    "module": "LeCodesAR",
+    "register": "LeCodesARPlugin",
+    "infoPlist": {
+      "NSCameraUsageDescription": "The app uses the camera to place things in the room around you."
+    }
+  },
+  "android": {
+    "module": "lecodes-ar",
+    "register": "io.letary.lecodes.plugins.ar.LeCodesARPlugin",
+    "dependencies": [
+      "com.google.ar:core:1.54.0"
+    ]
+  },
+  "web": {
+    "register": "web/ar.ts"
+  }
+}

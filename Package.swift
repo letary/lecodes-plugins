@@ -18,6 +18,7 @@ let package = Package(
     name: "lecodes-plugins",
     platforms: [.iOS(.v15)],
     products: [
+        .library(name: "LeCodesAR", targets: ["LeCodesAR"]),
         .library(name: "LeCodesAudioRecorder", targets: ["LeCodesAudioRecorder"]),
         .library(name: "LeCodesBrowser", targets: ["LeCodesBrowser"]),
         .library(name: "LeCodesCamera", targets: ["LeCodesCamera"]),
@@ -34,6 +35,12 @@ let package = Package(
         .package(url: "https://github.com/stasel/WebRTC", exact: "154.0.0"),
     ],
     targets: [
+        // ar
+        .target(
+            name: "LeCodesAR",
+            dependencies: [.product(name: "LeCodes", package: "lecodes")],
+            path: "plugins/ar/ios"
+        ),
         // audio-recorder
         .target(
             name: "LeCodesAudioRecorder",

@@ -96,6 +96,7 @@ export interface CameraView extends View<"camera", CameraParams, CameraEvents> {
 | `Uint8Array` | bytes, as they are — no text in between: `Data` in Swift, `ByteArray` in Kotlin |
 | `File` | bytes that stay in the host; what crosses is a handle (a texture, an upload, a share) — either way |
 | `Json` | any JSON value, passed through untyped (GeoJSON, a developer's payload) |
+| `Entity`, `Scene3D` | the app's 3D node / scene, its id on the wire: the half drives it through the host's gl facade (`engine.gl` / `host.gl` — matrices, a scene's camera, projection and background, the scene view's size and turn, a hook before each frame), never creating or freeing it; a `Scene3D` only goes from the app to the host |
 | a union of string literals | an enum |
 | `interface`, `T[]`, `[A, B]`, `T \| null`, `key?:` | a struct, a list, a tuple, a nullable, an optional |
 
@@ -151,6 +152,7 @@ export interface CameraView extends View<"camera", CameraParams, CameraEvents> {
 | `push` | service | `push` | no |
 | `browser` | service + view | `browser`, `webView` | yes: a popup, an iframe (own-origin pages) |
 | `webrtc` | service + view | `rtcMedia`, `rtcPeerConnection`, `rtcVideo` | yes: the browser's own WebRTC |
+| `ar` | service | `ar` | yes: the camera under the scene, turned by the sensors (no planes, no hit test, no images) |
 
 ## Naming
 
