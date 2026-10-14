@@ -21,8 +21,8 @@ import {
 import { ARBase, supports } from "./ar.gen"
 import { attachControls, type ControlsHandle, type ControlsOptions } from "./controls"
 import type {
-  ARErrorCode, ARMode, HitTarget, PlaneChange, PlaneDetection, PlaneType, Pose, StartOptions, TrackingReason,
-  TrackingState, WorldAlignment,
+  ARErrorCode, ARMode, HitTarget, ImageTarget, PlaneChange, PlaneDetection, PlaneType, Pose, StartOptions,
+  TrackingReason, TrackingState, WorldAlignment,
 } from "../contract"
 
 export type {
@@ -82,10 +82,6 @@ export type AnchorEvents = NodeEvents & {
   /** The anchor lost tracking: it stays where it was last seen. */
   untrack: () => void
 }
-
-/** An image-target restart of a session (`ARScene._restart`): `done` settles when the session runs
- *  again; `again` — a target came after the start read them, one more round. */
-type Restart = { session: ARBase, again: boolean, done: Promise<void> }
 
 /** A wire pose → the app's. */
 const poseOf = (w: Pose): ARPose => ({
@@ -267,12 +263,11 @@ export class ARScene extends Scene {
   private _shown: { promise: Promise<void>, resolve: () => void, reject: (error: Error) => void, epoch: number } | null = null
   /** The open's start while it is out (`_begin`). `closed`: close() ended its session meanwhile — the
    *  half refuses a start its close cut short ("failed"), which is the close's doing: the open was
-   *  superseded, not failed. `again`: an image target came meanwhile, which the start did not carry
-   *  (it read them when it was sent) — the session restarts once it runs. */
-  private _startOut: { session: ARBase, closed: boolean, again: boolean } | null = null
-  /** The image-target restart under way (`_restart`), null when there is none: the wire calls wait
-   *  for it (`_wire`). */
-  private _restarting: Restart | null = null
+   *  superseded, not failed. `images`: the image targets changed meanwhile, which the start did not
+   *  carry (it read them when it was sent) — the set goes to the session once it runs. */
+  private _startOut: { session: ARBase, closed: boolean, images: boolean } | null = null
+  /** A `setImages` is due at the end of this turn (`_setImages`). */
+  private _imagesDue = false
   private _options: AROpenOptions = {}
   private _root: Anchor | null = null
   /** The first horizontal plane's pose: where `root` is pinned. */
@@ -328,9 +323,8 @@ export class ARScene extends Scene {
   /** An anchor that follows an image (a printed marker, a poster): the session finds it in the camera
    *  image and keeps the anchor on it — a rigid pose in metres (its centre, Y out of the image, the
    *  image in XZ), its size `anchor.extent`. `physicalWidth` = the printed width in metres. Hidden
-   *  while not tracked. Before `open()`, or any time: on a running scene the session restarts with it,
-   *  and the calls made meanwhile (`captureFrame`, `hitTest`, …) wait for it and go to the restarted
-   *  session. */
+   *  while not tracked. Before `open()`, or any time: on a running scene the image set is updated in
+   *  place — the tracking, the planes and the anchors stay. */
   createAnchor(source: FetchResponse | File, physicalWidth = 0.2): ImageAnchor {
     const anchor = new ImageAnchor(physicalWidth)
     anchor._scene = this
@@ -339,7 +333,7 @@ export class ARScene extends Scene {
     this.add(anchor)
     const id = (source as unknown as { _h: Handle })._h.id
     this._images.push({ anchor, image: _toFile({ systemId: id, name: "image", size: 0 }), width: physicalWidth, source })
-    if (this._session) this._restart()
+    this._setImages()
     return anchor
   }
 
@@ -489,8 +483,12 @@ export class ARScene extends Scene {
     const { transition: _t, followLight, ...rest } = this._options
     const options: StartOptions = { ...rest, mode: this.mode }
     if (followLight) options.lightEstimation = true
-    if (this._images.length) options.images = this._images.map(t => ({ image: t.image, physicalWidth: t.width, entity: t.anchor }))
+    if (this._images.length) options.images = this._targets()
     return options
+  }
+
+  private _targets(): ImageTarget[] {
+    return this._images.map(t => ({ image: t.image, physicalWidth: t.width, entity: t.anchor }))
   }
 
   private async _begin(): Promise<void> {
@@ -526,7 +524,7 @@ export class ARScene extends Scene {
     })
     this._session = session
     this._baseIntensity = this.environmentIntensity
-    const out = { session, closed: false, again: false }
+    const out = { session, closed: false, images: false }
     this._startOut = out
     try {
       await session.start(this._startOptions())
@@ -545,8 +543,8 @@ export class ARScene extends Scene {
       throw superseded()
     }
     this._pinAll()
-    // an image target added while the start was out: it takes it the way a running session does
-    if (out.again) this._restart()
+    // the image targets changed while the start was out: the running session takes the set now
+    if (out.images) this._setImages()
   }
 
   /** The session is over (closed, failed): every anchor untracked, the planes gone. */
@@ -575,79 +573,44 @@ export class ARScene extends Scene {
     if (this._options.followLight) this.environmentIntensity = this._baseIntensity
   }
 
-  /** The configuration changed (an image target added or removed): the session starts again with it —
-   *  stop → start on the same channel (the contract has no call that changes a running session's
-   *  images). Several in a row are one restart; one that comes after the start read the targets makes
-   *  one more round. While it is under way the wire calls wait for it (`_wire`). */
-  private _restart(): void {
+  /** The image targets changed (one added or removed): a running session takes the whole set in place
+   *  (`setImages` — the tracking, the planes and the anchors stay). Sent at the end of the turn: several
+   *  targets added in a row are one set. While the open's start is out it waits for it (the start
+   *  carried the set it read when it was sent); before a session there is nothing to tell — the start
+   *  carries the set. Nothing waits for it: a set the half refuses is a console line, and an anchor
+   *  whose image the session did not take never tracks. */
+  private _setImages(): void {
     const session = this._session
     if (!session) return
     const out = this._startOut
-    if (out && out.session === session) { out.again = true; return }   // the open's start: _begin restarts after it
-    const under = this._restarting
-    if (under && under.session === session) { under.again = true; return }
-    const restart: Restart = { session, again: false, done: Promise.resolve() }
-    this._restarting = restart
-    restart.done = this._restartRounds(restart)
-    // first in line on `done`: the anchors are pinned before the calls that waited are sent
-    restart.done.then(() => { if (this._session === session) this._pinAll() }, (e: unknown) => {
-      if (this._session !== session) return   // closed meanwhile: nothing failed
-      this._drop(session)
-      this._emit("error", { code: "failed", message: e instanceof Error ? e.message : String(e) })
+    if (out && out.session === session) { out.images = true; return }
+    if (this._imagesDue) return
+    this._imagesDue = true
+    void Promise.resolve().then(() => {
+      this._imagesDue = false
+      // closed meanwhile: a call on the closed channel would open a new session (the next open's start
+      // carries the set)
+      if (this._session !== session) return
+      session.setImages(this._targets()).catch((e: unknown) => {
+        // a close while it was out: the half's refusal is the close's, nothing failed
+        if (this._session !== session) return
+        console.warn(`ARScene: the session did not take the image targets (${e instanceof Error ? e.message : String(e)}) — their anchors are not tracked`)
+      })
     })
   }
 
-  private async _restartRounds(restart: Restart): Promise<void> {
-    const session = restart.session
-    // closed meanwhile: what the waiting calls get is the wire's answer with no session, as a call
-    // that reached the stopped half got before
-    const closed = () => new Error("notRunning")
-    try {
-      // after the calls of this turn: several image targets added in a row are one restart
-      await Promise.resolve()
-      do {
-        if (this._session !== session) throw closed()
-        this._lost()
-        await session.stop()
-        // closed while it stopped: not started again — a call on the closed channel would open a new
-        // session, the camera running for a scene that is gone
-        if (this._session !== session) throw closed()
-        restart.again = false   // the start reads the targets now: one added after it needs a round more
-        try {
-          await session.start(this._startOptions())
-        } catch (e) {
-          // a close cuts the start short (the half refuses it "failed"): the scene was closed, nothing failed
-          throw this._session === session ? e : closed()
-        }
-      } while (restart.again)
-      if (this._session !== session) throw closed()
-    } finally {
-      if (this._restarting === restart) this._restarting = null
-    }
-  }
-
-  /** A wire call to the session: now — or, while an image-target restart is under way (between its
-   *  stop and its start the half has no session: it would refuse "notRunning", though the app stopped
-   *  nothing), once the session runs again. A failed restart's start error, "notRunning" when the
-   *  scene was closed meanwhile. */
+  /** A wire call to the running session; rejects without one. */
   private _wire<T>(name: string, call: (session: ARBase) => Promise<T>): Promise<T> {
     const session = this._session
     if (!session) return Promise.reject(new Error(`ARScene.${name}(): no session — open() the scene first`))
-    const restart = this._restarting
-    if (!restart || restart.session !== session) return call(session)
-    return restart.done.then(() => {
-      if (this._session !== session) throw new Error("notRunning")
-      return call(session)
-    })
+    return call(session)
   }
 
   /** Pin `anchor` at `pose` (where it is until the session holds it) — now, or when a session starts. */
   private _place(anchor: Anchor, pose: ARPoseLike): void {
     anchor.worldMatrix = Mat4.compose(pose.position, pose.rotation)
     this._pinned.add(anchor)
-    // during an image-target restart the restarted session pins it with the others (_pinAll)
-    const restart = this._restarting
-    if (!restart || restart.session !== this._session) this._pin(anchor, pose)
+    this._pin(anchor, pose)
   }
 
   /** `root` onto the floor (the first horizontal plane of this session). */
@@ -681,7 +644,7 @@ export class ARScene extends Scene {
     this._wire("release", s => s.release(anchor)).catch(() => {})
     anchor._setTracked(false)
     this.remove(anchor)
-    if (image >= 0 && this._session) this._restart()
+    if (image >= 0) this._setImages()
   }
 
   private _onPlane(p: { change: PlaneChange, id: number, type: PlaneType, pose: Pose, extent: number[], polygon: number[], mergedInto?: number }): void {

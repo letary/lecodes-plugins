@@ -32,6 +32,14 @@ export const start = (service: ServiceChannel<AREvents>, options?: StartOptions)
 export const stop = (service: ServiceChannel<AREvents>): Promise<void> =>
   service._call("stop", [])
 
+/** Replace the set of image targets of a RUNNING session without restarting it (the tracking, the
+ *  planes and the anchors stay); an image no longer in the set stops driving its entity (its
+ *  `image` event says `tracked: false` once if it was tracked). Before `start`, the images are
+ *  `StartOptions.images`.
+ *  Rejects with "notRunning" / "failed". */
+export const setImages = (service: ServiceChannel<AREvents>, images: ImageTarget[]): Promise<void> =>
+  service._call("setImages", [images.map((x: any) => _fromImageTarget(x))])
+
 /** What is under a point of the scene's view — in its touches' space (a scene touch's `clientX` /
  *  `clientY`: the units of the gl facade's viewport) — nearest first. Empty when nothing is, or on
  *  a host without surfaces (the web).
@@ -58,7 +66,7 @@ export const captureFrame = (service: ServiceChannel<AREvents>): Promise<File> =
 // ---- what the host's half has --------------------------------------------------------------------
 
 /** A method of the contract. */
-export type Method = "start" | "stop" | "hitTest" | "anchor" | "release" | "captureFrame"
+export type Method = "start" | "stop" | "setImages" | "hitTest" | "anchor" | "release" | "captureFrame"
 
 /** Whether this host has the service "ar" — and, given a method, a half new enough for it
  *  (a method added after the first version of the contract is tagged `@since`). */
@@ -78,6 +86,12 @@ export class ARBase extends ServiceChannel<AREvents> {
   /** Stop tracking: the camera is released, the scene's projection and background cleared. Not
    *  running is not an error. */
   stop(): Promise<void> { return stop(this) }
+  /** Replace the set of image targets of a RUNNING session without restarting it (the tracking, the
+   *  planes and the anchors stay); an image no longer in the set stops driving its entity (its
+   *  `image` event says `tracked: false` once if it was tracked). Before `start`, the images are
+   *  `StartOptions.images`.
+   *  Rejects with "notRunning" / "failed". */
+  setImages(images: ImageTarget[]): Promise<void> { return setImages(this, images) }
   /** What is under a point of the scene's view — in its touches' space (a scene touch's `clientX` /
    *  `clientY`: the units of the gl facade's viewport) — nearest first. Empty when nothing is, or on
    *  a host without surfaces (the web).

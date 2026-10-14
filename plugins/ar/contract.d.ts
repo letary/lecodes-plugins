@@ -94,6 +94,12 @@ export interface AR extends Service<"ar", ARParams, AREvents> {
   /** Stop tracking: the camera is released, the scene's projection and background cleared. Not
    *  running is not an error. */
   stop(): Promise<void>
+  /** Replace the set of image targets of a RUNNING session without restarting it (the tracking, the
+   *  planes and the anchors stay); an image no longer in the set stops driving its entity (its
+   *  `image` event says `tracked: false` once if it was tracked). Before `start`, the images are
+   *  `StartOptions.images`.
+   *  @rejects notRunning failed */
+  setImages(images: ImageTarget[]): Promise<void>
   /** What is under a point of the scene's view — in its touches' space (a scene touch's `clientX` /
    *  `clientY`: the units of the gl facade's viewport) — nearest first. Empty when nothing is, or on
    *  a host without surfaces (the web).

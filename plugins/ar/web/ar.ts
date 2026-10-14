@@ -3,8 +3,8 @@
 // `deviceorientation` where there is no gyroscope). The device is a point that looks around: where it
 // is is never known, so the camera stays at the world's origin and the world turns about the viewer;
 // the heading the session begins with is −Z, as ARKit's and ARCore's. Nothing is found in the
-// picture: no plane, no image, no light comes, `hitTest` answers [], `anchor` / `release` hold what
-// is already true (the world's origin never moves). WebXR is a later arm.
+// picture: no plane, no image, no light comes, `hitTest` answers [], `anchor` / `release` /
+// `setImages` hold what is already true (the world's origin never moves). WebXR is a later arm.
 //
 // The picture is fitted to the scene's view — `host.gl.viewport(scene)`: the canvas the scene draws on
 // (CSS px) and the display's turn — read every frame: a player inside a device frame is smaller than
@@ -20,7 +20,7 @@
 // The channel is the contract's (../contract.d.ts): ar.gen.ts is generated from it, this file
 // implements its ARPlugin, driving the scene through `host.gl` alone.
 
-import { ARError, registerAR, type ARPlugin, type HitResult, type PluginFile, type PluginHost, type StartOptions } from "./ar.gen"
+import { ARError, registerAR, type ARPlugin, type HitResult, type ImageTarget, type PluginFile, type PluginHost, type StartOptions } from "./ar.gen"
 import { Mahony, cameraTurn, coverUV, coveredFov, fromAngles, headingZero, matrixOf, multiply, perspective, upOf, type Quat } from "./orientation"
 
 /** The angle of view along the longer side of a phone's main camera, degrees: a browser does not say
@@ -221,6 +221,12 @@ export const register = (host: PluginHost): void => {
       },
 
       stop() { end() },
+
+      // nothing is found in the picture: a new set of images changes nothing (said as the start says it)
+      setImages(images: ImageTarget[]) {
+        if (!running) throw new ARError("notRunning")
+        if (images.length) console.warn("[ar] the web finds no images in the camera's picture: their anchors are never tracked")
+      },
 
       hitTest(): HitResult[] {
         if (!running) throw new ARError("notRunning")

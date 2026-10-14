@@ -440,6 +440,15 @@ interface ARPlugin {
     fun stop(reply: Reply<Unit, ARCode>)
 
     /**
+     * Replace the set of image targets of a RUNNING session without restarting it (the tracking, the
+     * planes and the anchors stay); an image no longer in the set stops driving its entity (its
+     * `image` event says `tracked: false` once if it was tracked). Before `start`, the images are
+     * `StartOptions.images`.
+     * Rejects with NOT_RUNNING / FAILED.
+     */
+    fun setImages(images: List<ImageTarget>, reply: Reply<Unit, ARCode>)
+
+    /**
      * What is under a point of the scene's view — in its touches' space (a scene touch's `clientX` /
      * `clientY`: the units of the gl facade's viewport) — nearest first. Empty when nothing is, or on
      * a host without surfaces (the web).
@@ -500,6 +509,10 @@ internal object ARGlue {
             }
             "stop" -> {
                 plugin.stop(Reply<Unit, ARCode>(settle, null))
+            }
+            "setImages" -> {
+                val a0 = (if (0 < n) r.list { ImageTarget.read(r) } else null) ?: return settle.reject("bad arguments — AR.setImages: images")
+                plugin.setImages(a0, Reply<Unit, ARCode>(settle, null))
             }
             "hitTest" -> {
                 val a0 = (if (0 < n) r.f64() else null) ?: return settle.reject("bad arguments — AR.hitTest: x")

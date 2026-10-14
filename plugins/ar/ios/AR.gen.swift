@@ -438,6 +438,12 @@ public protocol ARPlugin: AnyObject {
     /// Stop tracking: the camera is released, the scene's projection and background cleared. Not
     /// running is not an error.
     func stop(_ reply: Reply<Void, ARCode>)
+    /// Replace the set of image targets of a RUNNING session without restarting it (the tracking, the
+    /// planes and the anchors stay); an image no longer in the set stops driving its entity (its
+    /// `image` event says `tracked: false` once if it was tracked). Before `start`, the images are
+    /// `StartOptions.images`.
+    /// Rejects with .notRunning / .failed.
+    func setImages(_ images: [ImageTarget], _ reply: Reply<Void, ARCode>)
     /// What is under a point of the scene's view — in its touches' space (a scene touch's `clientX` /
     /// `clientY`: the units of the gl facade's viewport) — nearest first. Empty when nothing is, or on
     /// a host without surfaces (the web).
@@ -504,6 +510,9 @@ final class ARGlue: WireServiceInstance {
             }
         case "stop":
             plugin.stop(Reply<Void, ARCode>(settle))
+        case "setImages":
+            guard let a0 = args[0].list({ v0 in ImageTarget(wire: v0) }) else { return settle.reject("bad arguments — AR.setImages: images") }
+            plugin.setImages(a0, Reply<Void, ARCode>(settle))
         case "hitTest":
             guard let a0 = args[0].f64 else { return settle.reject("bad arguments — AR.hitTest: x") }
             guard let a1 = args[1].f64 else { return settle.reject("bad arguments — AR.hitTest: y") }

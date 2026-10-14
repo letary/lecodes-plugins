@@ -20,10 +20,17 @@
 //  the scene is presented its view has no size (the session starts during the warm render): the frame
 //  waits for one.
 //
+//  `setImages` gives a running session another set of image targets: a new AugmentedImageDatabase,
+//  built on a worker (`addImage` extracts the image's features: slow), configured at the start of the
+//  next frame — before `update()`, where configure is allowed — on the resumed session, which goes on
+//  (the tracking, the planes and the anchors stay). ARCore stops every image of the database it lets
+//  go, one still in the set too: that one is found again as the new database's.
+//
 //  Before the first session ARCore may need installing: `start` asks Google Play Services for AR
 //  (`requestInstall`), which shows the Play Store's dialog and resumes the activity; the start goes on
 //  at that resume. The channel is AR.gen.kt, generated from contract.d.ts; `start` arrives with the
-//  camera permission granted. Main thread throughout.
+//  camera permission granted. Main thread throughout (the GL thread is the main thread here), but for
+//  the captures' encode and the image databases' build.
 //
 
 package io.letary.lecodes.plugins.ar
@@ -98,6 +105,8 @@ class ARCoreSession(
     private var installRequested = false
 
     private var session: Session? = null
+    /** What the session runs: `setImages` configures it again with another image database. */
+    private var config: Config? = null
     private var mode = ARMode.WORLD
     private var texture: ExternalTexture? = null
     private var names = IntArray(0)
@@ -119,6 +128,13 @@ class ARCoreSession(
     private val images = HashMap<String, Entity>()
     private class ImageSent(val tracked: Boolean, val ex: Float, val ez: Float, val at: Long)
     private val imagesSent = HashMap<Int, ImageSent>()
+    /** setImages: the number of the newest set asked for, the replies waiting for it, its database once
+     *  built (with the names it holds) — configured by the next frame — and the builds still out on the
+     *  worker, which use the session (it is closed after them). */
+    private var imagesAsked = 0
+    private val imagesReplies = ArrayList<Reply<Unit, ARCode>>()
+    private var imagesBuilt: Pair<AugmentedImageDatabase, Map<String, Entity>>? = null
+    private var imagesBuilding = 0
     private val anchors = HashMap<Int, Pair<Entity, Anchor>>()
 
     private class PlaneSent(val id: Double, val type: PlaneType, val pose: Pose, val cx: Float, val cy: Float, val cz: Float, val ex: Float, val ez: Float, val at: Long)
@@ -154,6 +170,30 @@ class ARCoreSession(
     override fun stop(reply: Reply<Unit, ARCode>) {
         end()
         reply.resolve()
+    }
+
+    override fun setImages(images: List<ImageTarget>, reply: Reply<Unit, ARCode>) {
+        val s = session ?: return reply.reject(ARCode.NOT_RUNNING)
+        // the newest set wins: an older one still building is dropped when it is done, and its reply is
+        // answered with the newest's
+        val asked = ++imagesAsked
+        imagesReplies.add(reply)
+        imagesBuilding++
+        builder.execute {
+            val built = try {
+                AugmentedImageDatabase(s).let { database -> database to addImages(database, images) }
+            } catch (e: Exception) {
+                Log.w(TAG, "[ar] setImages: ${e.message ?: e}")
+                null
+            }
+            main.post {
+                imagesBuilding--
+                // closed meanwhile (its replies were answered then), or a newer set asked for
+                if (session !== s || asked != imagesAsked) return@post
+                if (built != null) imagesBuilt = built
+                else for (waiting in takeImagesReplies()) waiting.reject(ARCode.FAILED)
+            }
+        }
     }
 
     override fun hitTest(x: Double, y: Double, target: HitTarget?, reply: Reply<List<HitResult>, ARCode>) {
@@ -263,16 +303,7 @@ class ARCoreSession(
         val targets = options?.images.orEmpty()
         if (targets.isNotEmpty()) {
             val database = AugmentedImageDatabase(s)
-            for (target in targets) {
-                val bitmap = BitmapFactory.decodeByteArray(target.image.data, 0, target.image.data.size)
-                if (bitmap == null) { Log.w(TAG, "[ar] an image target did not decode — left out"); continue }
-                try {
-                    database.addImage(target.entity.id.toString(), bitmap, target.physicalWidth.toFloat())
-                    images[target.entity.id.toString()] = target.entity
-                } catch (e: Exception) {
-                    Log.w(TAG, "[ar] an image target was refused (${e.message ?: e}) — left out")
-                }
-            }
+            images.putAll(addImages(database, targets))
             config.augmentedImageDatabase = database
         }
         try {
@@ -290,6 +321,7 @@ class ARCoreSession(
             return failStart(ARCode.FAILED, "ARCore: ${e.message ?: e}")
         }
         session = s
+        this.config = config
         resumed = true
         cancelFrame = gl.onFrame { frame() }
     }
@@ -309,6 +341,12 @@ class ARCoreSession(
         // first frame): ARCore runs and the start resolves, the picture is fitted from the frame
         // after the view has a size
         val fitted = displayGeometry(s, scene)
+        // a new image set (setImages) is configured here, before the update: configure is not allowed
+        // inside one, and the session is resumed
+        imagesBuilt?.let { (database, names) ->
+            imagesBuilt = null
+            useImages(s, database, names)
+        }
         val frame = try { s.update() } catch (e: CameraNotAvailableException) {
             fail(ARErrorCode.CAMERA, "the camera is not available")
             return
@@ -408,6 +446,9 @@ class ARCoreSession(
     private fun images(frame: Frame) {
         val time = SystemClock.uptimeMillis()
         for (image in frame.getUpdatedTrackables(AugmentedImage::class.java)) {
+            // an image of a database setImages let go: ARCore stopped it for good (an image of the
+            // database in use is never stopped) — useImages said what that meant for its entity
+            if (image.trackingState == ArTracking.STOPPED) continue
             val entity = images[image.name] ?: continue
             val tracked = image.trackingState == ArTracking.TRACKING && image.trackingMethod == AugmentedImage.TrackingMethod.FULL_TRACKING
             if (tracked) {
@@ -439,6 +480,64 @@ class ARCoreSession(
     }
 
     // ── plumbing ─────────────────────────────────────────────────────────────
+
+    /** The targets into `database`, by their entity id: the names it holds. One that does not decode,
+     *  or that ARCore refuses (too few features), is left out with a console line. On the worker for
+     *  setImages: `addImage` extracts the image's features — slow, and documented as a background
+     *  call. */
+    private fun addImages(database: AugmentedImageDatabase, targets: List<ImageTarget>): Map<String, Entity> {
+        val names = HashMap<String, Entity>()
+        for (target in targets) {
+            val bitmap = BitmapFactory.decodeByteArray(target.image.data, 0, target.image.data.size)
+            if (bitmap == null) { Log.w(TAG, "[ar] an image target did not decode — left out"); continue }
+            try {
+                database.addImage(target.entity.id.toString(), bitmap, target.physicalWidth.toFloat())
+                names[target.entity.id.toString()] = target.entity
+            } catch (e: Exception) {
+                Log.w(TAG, "[ar] an image target was refused (${e.message ?: e}) — left out")
+            }
+        }
+        return names
+    }
+
+    /** The resumed session goes on with `database`. ARCore stops every image of the one it lets go
+     *  (its docs: STOPPED at once, never to resume): a tracked one says so and no longer drives its
+     *  entity — one still in the set is found again as the new database's (`track` again), one that
+     *  left it is forgotten. */
+    private fun useImages(s: Session, database: AugmentedImageDatabase, names: Map<String, Entity>) {
+        val replies = takeImagesReplies()
+        val config = config ?: run {
+            for (reply in replies) reply.reject(ARCode.NOT_RUNNING)
+            return
+        }
+        val before = config.augmentedImageDatabase
+        try {
+            config.augmentedImageDatabase = database
+            s.configure(config)
+        } catch (e: Exception) {
+            config.augmentedImageDatabase = before
+            Log.w(TAG, "[ar] setImages: ${e.message ?: e}")
+            for (reply in replies) reply.reject(ARCode.FAILED)
+            return
+        }
+        val time = SystemClock.uptimeMillis()
+        for (entity in images.values) {
+            val sent = imagesSent[entity.id] ?: continue
+            if (sent.tracked) events.image(entity, false, listOf(sent.ex.toDouble(), sent.ez.toDouble()))
+            if (entity.id.toString() in names) imagesSent[entity.id] = ImageSent(false, sent.ex, sent.ez, time)
+            else imagesSent.remove(entity.id)
+        }
+        images.clear()
+        images.putAll(names)
+        for (reply in replies) reply.resolve()
+    }
+
+    /** The setImages replies waiting, the wait emptied first (as takeCaptures). */
+    private fun takeImagesReplies(): List<Reply<Unit, ARCode>> {
+        val replies = ArrayList(imagesReplies)
+        imagesReplies.clear()
+        return replies
+    }
 
     /** ARCore's projection, its crop and its hit test are for the display it is told of: the scene
      *  view's (its dp size in px, its turn), told again when it changed — before the update, which
@@ -603,16 +702,22 @@ class ARCoreSession(
             starting = null
             wait.reply.reject(ARCode.FAILED)
         }
-        // a capture still waiting for its image: the session it waited on is over
+        // a capture still waiting for its image, an image set not yet configured: the session they
+        // waited on is over
         for (reply in takeCaptures()) reply.reject(ARCode.NOT_RUNNING)
+        imagesBuilt = null
+        for (reply in takeImagesReplies()) reply.reject(ARCode.NOT_RUNNING)
         installRequested = false
         for ((_, anchor) in anchors.values) anchor.detach()
         anchors.clear()
         session?.let { s ->
             s.pause()
-            s.close()
+            // an image database still building on the worker uses the session: it is closed after the
+            // build, on the worker (ARCore's own advice for close(): pause here, close off the main thread)
+            if (imagesBuilding > 0) builder.execute { s.close() } else s.close()
         }
         session = null
+        config = null
         resumed = false
         latest = null
         scene?.let { sc ->
@@ -647,6 +752,9 @@ class ARCoreSession(
         private const val CAPTURE_WAIT_FRAMES = 30
         /** captureFrame's JPEG encoder: off the GL thread. */
         private val encoder = Executors.newSingleThreadExecutor()
+        /** setImages' database builder: off the GL thread, and not the encoder's — a capture's encode
+         *  does not wait behind a build. */
+        private val builder = Executors.newSingleThreadExecutor()
 
         /** The viewport's turn (degrees) as the `Surface.ROTATION_*` ARCore takes. */
         private fun surfaceRotation(degrees: Int): Int = when (degrees) {

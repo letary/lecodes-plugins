@@ -386,6 +386,12 @@ export interface ARPlugin {
   /** Stop tracking: the camera is released, the scene's projection and background cleared. Not
    *  running is not an error. */
   stop(): void | Promise<void>
+  /** Replace the set of image targets of a RUNNING session without restarting it (the tracking, the
+   *  planes and the anchors stay); an image no longer in the set stops driving its entity (its
+   *  `image` event says `tracked: false` once if it was tracked). Before `start`, the images are
+   *  `StartOptions.images`.
+   *  Rejects with "notRunning" / "failed". */
+  setImages(images: ImageTarget[]): void | Promise<void>
   /** What is under a point of the scene's view — in its touches' space (a scene touch's `clientX` /
    *  `clientY`: the units of the gl facade's viewport) — nearest first. Empty when nothing is, or on
    *  a host without surfaces (the web).
@@ -440,6 +446,12 @@ export const registerAR = (host: PluginHost, make: (params: ARParams, events: AR
         }
         case "stop": {
           await plugin.stop()
+          return undefined
+        }
+        case "setImages": {
+          const a0 = wire.list(args[0], (v0) => readImageTarget(v0))
+          if (a0 === undefined) throw new Error("bad arguments — AR.setImages: images")
+          await plugin.setImages(a0)
           return undefined
         }
         case "hitTest": {

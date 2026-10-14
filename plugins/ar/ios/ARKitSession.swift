@@ -12,6 +12,11 @@
 //  plane). The channel is AR.gen.swift, generated from contract.d.ts; `start` arrives with the camera
 //  permission granted.
 //
+//  `setImages` gives a running session another set of image targets: the configuration's images
+//  change and the session runs it again with no reset options — ARKit keeps the world map, the
+//  planes and the anchors, and goes on tracking an image still in the set (its reference is the same
+//  object, so ARKit knows it is the same image).
+//
 //  The viewport is the scene view's (`gl.viewport(scene)`: its size in points, the display's turn),
 //  read every frame: a shell may show the scene in less than the window, and a turn or a resize
 //  re-makes the projection and the background's crop that frame. Before the scene is presented its
@@ -34,6 +39,8 @@ final class ARKitSession: NSObject, ARPlugin, ARSessionDelegate {
     private let gl: GL
 
     private var session: ARSession?
+    /// What the session runs: `setImages` runs it again with another image set.
+    private var configuration: ARConfiguration?
     private var mode: ARMode = .world
     private var texture: ExternalTexture?
     private var cancelFrame: GL.Cancel?
@@ -50,6 +57,9 @@ final class ARKitSession: NSObject, ARPlugin, ARSessionDelegate {
     private var relocalizing = false
     /// Image targets by their reference image's name (the entity id), and what was last said of each.
     private var images: [String: Entity] = [:]
+    /// Each target's reference image, by its entity id: kept across `setImages`, since ARKit knows a
+    /// reference image by the object — a new one for the same picture is a new image, found again.
+    private var references: [UInt32: ARReferenceImage] = [:]
     private struct ImageSent { var tracked: Bool; var extent: simd_float2; var at: TimeInterval }
     private var imagesSent: [UInt32: ImageSent] = [:]
     /// The anchors `anchor()` made, both ways.
@@ -92,30 +102,15 @@ final class ARKitSession: NSObject, ARPlugin, ARSessionDelegate {
             return reply.reject(.unavailable)
         }
 
-        var references = Set<ARReferenceImage>()
-        for target in options?.images ?? [] {
-            guard let image = UIImage(data: target.image.data)?.cgImage else {
-                print("[ar] an image target did not decode — left out")
-                continue
-            }
-            let reference = ARReferenceImage(image, orientation: .up, physicalWidth: CGFloat(target.physicalWidth))
-            reference.name = String(target.entity.id)
-            references.insert(reference)
-            images[String(target.entity.id)] = target.entity
-        }
-
+        let targets = referenceImages(options?.images ?? [])
         let configuration: ARConfiguration
         if mode == .images {
             let c = ARImageTrackingConfiguration()
-            c.trackingImages = references
-            c.maximumNumberOfTrackedImages = max(1, references.count)
             c.isAutoFocusEnabled = options?.autoFocus ?? true
             configuration = c
         } else {
             let c = ARWorldTrackingConfiguration()
             c.planeDetection = Self.detection(options?.planes ?? .horizontal)
-            c.detectionImages = references
-            c.maximumNumberOfTrackedImages = references.count
             c.automaticImageScaleEstimationEnabled = true
             c.environmentTexturing = .none
             c.isAutoFocusEnabled = options?.autoFocus ?? true
@@ -123,11 +118,13 @@ final class ARKitSession: NSObject, ARPlugin, ARSessionDelegate {
             configuration = c
         }
         configuration.isLightEstimationEnabled = options?.lightEstimation ?? false
+        Self.use(targets, in: configuration)
 
         let session = ARSession()
         session.delegate = self
         session.delegateQueue = .main   // the engine's thread
         self.session = session
+        self.configuration = configuration
         self.mode = mode
         self.texture = texture
         starting = reply
@@ -137,6 +134,29 @@ final class ARKitSession: NSObject, ARPlugin, ARSessionDelegate {
 
     func stop(_ reply: Reply<Void, ARCode>) {
         end()
+        reply.resolve()
+    }
+
+    func setImages(_ targets: [ImageTarget], _ reply: Reply<Void, ARCode>) {
+        guard let session, let configuration else { return reply.reject(.notRunning) }
+        let before = images
+        let set = referenceImages(targets)
+        // an image that left the set no longer drives its entity (`follow` reads `images`) and, tracked,
+        // says so once; its anchor is removed from the session — ARKit is not said to drop the anchor
+        // of a reference no longer configured, and a later target of that name would find it there
+        var gone = Set<String>()
+        for (name, entity) in before where images[name] == nil {
+            gone.insert(name)
+            if let sent = imagesSent.removeValue(forKey: entity.id), sent.tracked {
+                events.image(entity: entity, tracked: false, extent: [Double(sent.extent.x), Double(sent.extent.y)])
+            }
+        }
+        for case let anchor as ARImageAnchor in session.currentFrame?.anchors ?? [] {
+            if let name = anchor.referenceImage.name, gone.contains(name) { session.remove(anchor: anchor) }
+        }
+        Self.use(set, in: configuration)
+        // no reset options: the tracking, the planes and the anchors stay
+        session.run(configuration)
         reply.resolve()
     }
 
@@ -413,6 +433,47 @@ final class ARKitSession: NSObject, ARPlugin, ARSessionDelegate {
         pinned.removeAll()
         anchorOf.removeAll()
         planes.removeAll()
+        references.removeAll()
+        configuration = nil
+    }
+
+    /// The targets as ARKit's reference images, `images` and `references` made over for them: a target
+    /// already known keeps its reference (ARKit goes on tracking it), a new one is decoded — one that
+    /// does not decode is left out (a console line).
+    private func referenceImages(_ targets: [ImageTarget]) -> Set<ARReferenceImage> {
+        var set = Set<ARReferenceImage>()
+        var kept: [UInt32: ARReferenceImage] = [:]
+        images.removeAll()
+        for target in targets {
+            let id = target.entity.id
+            let reference: ARReferenceImage
+            if let known = references[id], known.physicalSize.width == CGFloat(target.physicalWidth) {
+                reference = known
+            } else {
+                guard let image = UIImage(data: target.image.data)?.cgImage else {
+                    print("[ar] an image target did not decode — left out")
+                    continue
+                }
+                reference = ARReferenceImage(image, orientation: .up, physicalWidth: CGFloat(target.physicalWidth))
+                reference.name = String(id)
+            }
+            set.insert(reference)
+            kept[id] = reference
+            images[String(id)] = target.entity
+        }
+        references = kept
+        return set
+    }
+
+    /// The image set into the configuration, as world tracking detects them or image tracking tracks them.
+    private static func use(_ set: Set<ARReferenceImage>, in configuration: ARConfiguration) {
+        if let c = configuration as? ARImageTrackingConfiguration {
+            c.trackingImages = set
+            c.maximumNumberOfTrackedImages = max(1, set.count)
+        } else if let c = configuration as? ARWorldTrackingConfiguration {
+            c.detectionImages = set
+            c.maximumNumberOfTrackedImages = set.count
+        }
     }
 
     private static func detection(_ planes: PlaneDetection) -> ARWorldTrackingConfiguration.PlaneDetection {
