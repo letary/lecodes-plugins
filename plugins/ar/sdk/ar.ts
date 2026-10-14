@@ -6,13 +6,15 @@
 // planes are NODES of the scene (`Anchor extends Node`, `ARPlane extends Anchor`), kept here by their
 // entity / plane id and moved by the session's events; the session is the scene's, opened by `open()`
 // — the camera permission and a warm render first, while the current destination stays on screen —
-// and closed by `close()`. A host without the plugin is refused before anything is asked.
+// and closed by `close()`. `open()` resolves at the first frame drawn of the presented scene, not at
+// the present (a host mounts and sizes the scene's view after it). A host without the plugin is
+// refused before anything is asked.
 //
 // `root` is a pose anchor like any other (`scene.anchor(pose)`): the wrapper pins it on the first
 // horizontal plane the session reports, so the halves know no root.
 
 import {
-  Geometry, Mat4, Material, Mesh, Node, Quat, Scene, Vec3, _ensurePermission, _navEpoch, _toFile,
+  Geometry, Mat4, Material, Mesh, Node, Presentable, Quat, Scene, System, Vec3, _ensurePermission, _navEpoch, _toFile,
   type ClickEvent, type DismissOptions, type FetchResponse, type File, type NodeEvents, type PresentOptions,
   type QuatLike, type SceneOptions, type TouchStartEvent, type Vec3Like,
 } from "lecodes-sdk/plugin"
@@ -80,6 +82,10 @@ export type AnchorEvents = NodeEvents & {
   /** The anchor lost tracking: it stays where it was last seen. */
   untrack: () => void
 }
+
+/** An image-target restart of a session (`ARScene._restart`): `done` settles when the session runs
+ *  again; `again` — a target came after the start read them, one more round. */
+type Restart = { session: ARBase, again: boolean, done: Promise<void> }
 
 /** A wire pose → the app's. */
 const poseOf = (w: Pose): ARPose => ({
@@ -225,6 +231,15 @@ const gridGeometry = (polygon: readonly number[], step = 0.1): Geometry => {
   return geometry
 }
 
+/** The first frame of a presented ARScene: a System — the scene-wide per-frame hook, ticked in the
+ *  late phase of every frame the engine draws, and the engine draws only the scene on show, once its
+ *  view has a surface and a size — attached by `_presented()`, gone at its first tick. */
+class FirstFrame extends System<"arFirstFrame", ARScene> {
+  // a paused game still draws its scene: the wait is not the game's
+  protected override updateWhilePaused = true
+  protected override update(): void { this.scene._framed() }
+}
+
 /**
  * A 3D scene over the device camera with world tracking: the session (the "ar" plugin) moves
  * `scene.camera` and draws the camera image behind everything, every frame. Everything of `Scene`
@@ -233,7 +248,7 @@ const gridGeometry = (polygon: readonly number[], step = 0.1): Geometry => {
  * ```ts
  * const scene = new ARScene()
  * scene.root.add(await Model.load(asset('./chair.glb')))
- * await scene.open()          // camera permission → warm render → session → on screen
+ * await scene.open()          // camera permission → warm render → session → on screen, drawn
  * ```
  */
 export class ARScene extends Scene {
@@ -247,12 +262,24 @@ export class ARScene extends Scene {
   /** @internal The running session, null when there is none. */
   _session: ARBase | null = null
   private _opening: Promise<void> | null = null
-  private _restarting = false
+  /** The wait of `open()` / `Router.push` for the presented scene's first frame (`_presented`), and
+   *  the navigation epoch of its present. */
+  private _shown: { promise: Promise<void>, resolve: () => void, reject: (error: Error) => void, epoch: number } | null = null
+  /** The open's start while it is out (`_begin`). `closed`: close() ended its session meanwhile — the
+   *  half refuses a start its close cut short ("failed"), which is the close's doing: the open was
+   *  superseded, not failed. `again`: an image target came meanwhile, which the start did not carry
+   *  (it read them when it was sent) — the session restarts once it runs. */
+  private _startOut: { session: ARBase, closed: boolean, again: boolean } | null = null
+  /** The image-target restart under way (`_restart`), null when there is none: the wire calls wait
+   *  for it (`_wire`). */
+  private _restarting: Restart | null = null
   private _options: AROpenOptions = {}
   private _root: Anchor | null = null
   /** The first horizontal plane's pose: where `root` is pinned. */
   private _floor: ARPose | null = null
-  private readonly _images: { anchor: ImageAnchor, image: File, width: number }[] = []
+  /** The image targets. `source` is held for the bytes: a fetched response owns its buffer, which the
+   *  host frees once the response is collected — the File the session is handed only names it. */
+  private readonly _images: { anchor: ImageAnchor, image: File, width: number, source: FetchResponse | File }[] = []
   /** The pose anchors: pinned again where they are when a session starts. (`root` is not one: a
    *  session pins it on its own first floor.) */
   private readonly _pinned = new Set<Anchor>()
@@ -301,7 +328,9 @@ export class ARScene extends Scene {
   /** An anchor that follows an image (a printed marker, a poster): the session finds it in the camera
    *  image and keeps the anchor on it — a rigid pose in metres (its centre, Y out of the image, the
    *  image in XZ), its size `anchor.extent`. `physicalWidth` = the printed width in metres. Hidden
-   *  while not tracked. Before `open()`, or any time (the session restarts with it). */
+   *  while not tracked. Before `open()`, or any time: on a running scene the session restarts with it,
+   *  and the calls made meanwhile (`captureFrame`, `hitTest`, …) wait for it and go to the restarted
+   *  session. */
   createAnchor(source: FetchResponse | File, physicalWidth = 0.2): ImageAnchor {
     const anchor = new ImageAnchor(physicalWidth)
     anchor._scene = this
@@ -309,7 +338,7 @@ export class ARScene extends Scene {
     anchor.visible = false
     this.add(anchor)
     const id = (source as unknown as { _h: Handle })._h.id
-    this._images.push({ anchor, image: _toFile({ systemId: id, name: "image", size: 0 }), width: physicalWidth })
+    this._images.push({ anchor, image: _toFile({ systemId: id, name: "image", size: 0 }), width: physicalWidth, source })
     if (this._session) this._restart()
     return anchor
   }
@@ -328,9 +357,7 @@ export class ARScene extends Scene {
    *  give it (`ev.clientX` / `ev.clientY` of a `click` or a `touchstart`); empty when nothing is — and
    *  always on the web, which finds no surfaces. Rejects without a running session. */
   async hitTest(x: number, y: number, target?: HitTarget): Promise<ARHitResult[]> {
-    const session = this._session
-    if (!session) throw new Error("ARScene.hitTest(): no session — open() the scene first")
-    const hits = await session.hitTest(x, y, target)
+    const hits = await this._wire("hitTest", session => session.hitTest(x, y, target))
     return hits.map(h => ({
       pose: poseOf(h.pose), type: h.type, distance: h.distance,
       plane: h.plane === undefined ? null : this._planes.get(h.plane) ?? null,
@@ -340,9 +367,7 @@ export class ARScene extends Scene {
   /** The latest camera image as a JPEG `File` (the camera's alone; `capture()` is the composite).
    *  Rejects without a running session. */
   captureFrame(): Promise<File> {
-    const session = this._session
-    if (!session) return Promise.reject(new Error("ARScene.captureFrame(): no session — open() the scene first"))
-    return session.captureFrame()
+    return this._wire("captureFrame", session => session.captureFrame())
   }
 
   /**
@@ -357,13 +382,17 @@ export class ARScene extends Scene {
 
   // ---- presenting ----
 
-  /** Camera permission → warm render → the session → on screen. The current destination (a loading
-   *  screen) stays until all of it is done; rejects — and leaves it — when the camera is denied, AR is
-   *  unavailable ("unavailable": no ARKit / ARCore), or another navigation came meanwhile. */
+  /** Camera permission → warm render → the session → on screen, resolved at the scene's first frame:
+   *  after `await scene.open()` the scene is shown, `camera.displaySize` is its view's size, and
+   *  `hitTest` / `captureFrame` answer. The current destination (a loading screen) stays until the
+   *  session runs; rejects — and leaves it — when the camera is denied, AR is unavailable
+   *  ("unavailable": no ARKit / ARCore), or another navigation came meanwhile; one that comes before
+   *  the first frame (a `close()` too) rejects it as superseded. */
   override async open(options: AROpenOptions = {}): Promise<void> {
     this._options = options
     await this._prepare()
     super.open(options)
+    await this._presented()
   }
 
   /** @internal Presentable prepare hook (Router.push / replace await it, with the options of the last
@@ -380,10 +409,58 @@ export class ARScene extends Scene {
     return opening
   }
 
-  /** Close the scene; its session stops (the camera is let go). */
+  /** @internal Presentable's after-present hook (`open()`, Router.push / replace): resolves in the
+   *  first frame drawn of this scene. A host mounts the scene's view after the present and sizes it
+   *  later still (Android's surface): at the present `camera.displaySize` read 0 × 0 and a hit test
+   *  had no viewport; in that frame both are known, and the session's frame is drawn. Rejects as
+   *  superseded when the scene left the screen first. */
+  _presented(): Promise<void> {
+    // the epoch of this present: a close event of an EARLIER presentation (the runtime's events come
+    // later) finds it unmoved and is not one
+    const epoch = _navEpoch()
+    const shown = this._shown
+    if (shown) {
+      shown.epoch = epoch   // two opens at once: one wait, the last present's
+      return shown.promise
+    }
+    let resolve!: () => void, reject!: (error: Error) => void
+    const promise = new Promise<void>((res, rej) => { resolve = res; reject = rej })
+    this._shown = { promise, resolve, reject, epoch }
+    this.system(FirstFrame)
+    return promise
+  }
+
+  /** @internal FirstFrame's tick: a frame was drawn — this scene's while it is the one on show. */
+  _framed(): void {
+    this._settleShown(Presentable.current === this ? null : "another destination was opened")
+  }
+
+  private _settleShown(superseded: string | null): void {
+    const shown = this._shown
+    if (!shown) return
+    this._shown = null
+    this.removeSystem(FirstFrame)
+    if (superseded === null) shown.resolve()
+    else shown.reject(new Error(`ARScene.open() superseded before the scene's first frame: ${superseded}`))
+  }
+
+  /** Close the scene; its session stops (the camera is let go). An `open()` still waiting — for the
+   *  session's start or the first frame — rejects as superseded. */
   override close(options?: DismissOptions): void {
+    this._settleShown("the scene was closed")
+    // a start still out ends with this session: the half's refusal of it is this close's (_begin)
+    const out = this._startOut
+    if (out && out.session === this._session) out.closed = true
     this._end()
     super.close(options)
+  }
+
+  /** @internal The scene left the screen (replaced, covered, closed: the runtime's lifecycle event).
+   *  A wait for its first frame is over — no frame of it comes now. The session stays: its life is
+   *  `close()`'s, as after a resolved open() (a covered scene comes back with a pop). */
+  override _emitClose(): void {
+    if (this._shown && _navEpoch() !== this._shown.epoch) this._settleShown("another destination was opened")
+    super._emitClose()
   }
 
   // ---- events ----
@@ -418,7 +495,7 @@ export class ARScene extends Scene {
 
   private async _begin(): Promise<void> {
     const epoch = _navEpoch()
-    const superseded = () => new Error("ARScene.open() superseded: another destination was opened while preparing")
+    const superseded = (why = "another destination was opened") => new Error(`ARScene.open() superseded: ${why} while preparing`)
     await _ensurePermission("camera")
     if (this.useWarmRender) await this.warmRender()
     if (_navEpoch() !== epoch) throw superseded()   // (a close() too: no session for a scene that went)
@@ -449,18 +526,27 @@ export class ARScene extends Scene {
     })
     this._session = session
     this._baseIntensity = this.environmentIntensity
+    const out = { session, closed: false, again: false }
+    this._startOut = out
     try {
       await session.start(this._startOptions())
     } catch (e) {
+      // closed while it started: every half's end() refuses a start still out ("failed") — the open
+      // was superseded, it did not fail; close() closed the session, once
+      if (out.closed) throw superseded("the scene was closed")
       this._drop(session)
       throw e
+    } finally {
+      if (this._startOut === out) this._startOut = null
     }
-    if (this._session !== session) throw new Error("ARScene.open() superseded: the scene was closed while preparing")
+    if (this._session !== session) throw superseded("the scene was closed")
     if (_navEpoch() !== epoch) {
       this._drop(session)
       throw superseded()
     }
     this._pinAll()
+    // an image target added while the start was out: it takes it the way a running session does
+    if (out.again) this._restart()
   }
 
   /** The session is over (closed, failed): every anchor untracked, the planes gone. */
@@ -489,23 +575,69 @@ export class ARScene extends Scene {
     if (this._options.followLight) this.environmentIntensity = this._baseIntensity
   }
 
-  /** The configuration changed (an image target): the session starts again with it. */
+  /** The configuration changed (an image target added or removed): the session starts again with it —
+   *  stop → start on the same channel (the contract has no call that changes a running session's
+   *  images). Several in a row are one restart; one that comes after the start read the targets makes
+   *  one more round. While it is under way the wire calls wait for it (`_wire`). */
   private _restart(): void {
-    if (this._restarting) return
-    this._restarting = true
-    // after the calls of this turn: several image targets added in a row are one restart
-    void Promise.resolve().then(() => {
-      this._restarting = false
-      const session = this._session
-      if (!session) return
-      this._lost()
-      session.stop()
-        .then(() => session.start(this._startOptions()))
-        .then(() => { if (this._session === session) this._pinAll() }, (e: unknown) => {
-          if (this._session !== session) return
-          this._drop(session)
-          this._emit("error", { code: "failed", message: e instanceof Error ? e.message : String(e) })
-        })
+    const session = this._session
+    if (!session) return
+    const out = this._startOut
+    if (out && out.session === session) { out.again = true; return }   // the open's start: _begin restarts after it
+    const under = this._restarting
+    if (under && under.session === session) { under.again = true; return }
+    const restart: Restart = { session, again: false, done: Promise.resolve() }
+    this._restarting = restart
+    restart.done = this._restartRounds(restart)
+    // first in line on `done`: the anchors are pinned before the calls that waited are sent
+    restart.done.then(() => { if (this._session === session) this._pinAll() }, (e: unknown) => {
+      if (this._session !== session) return   // closed meanwhile: nothing failed
+      this._drop(session)
+      this._emit("error", { code: "failed", message: e instanceof Error ? e.message : String(e) })
+    })
+  }
+
+  private async _restartRounds(restart: Restart): Promise<void> {
+    const session = restart.session
+    // closed meanwhile: what the waiting calls get is the wire's answer with no session, as a call
+    // that reached the stopped half got before
+    const closed = () => new Error("notRunning")
+    try {
+      // after the calls of this turn: several image targets added in a row are one restart
+      await Promise.resolve()
+      do {
+        if (this._session !== session) throw closed()
+        this._lost()
+        await session.stop()
+        // closed while it stopped: not started again — a call on the closed channel would open a new
+        // session, the camera running for a scene that is gone
+        if (this._session !== session) throw closed()
+        restart.again = false   // the start reads the targets now: one added after it needs a round more
+        try {
+          await session.start(this._startOptions())
+        } catch (e) {
+          // a close cuts the start short (the half refuses it "failed"): the scene was closed, nothing failed
+          throw this._session === session ? e : closed()
+        }
+      } while (restart.again)
+      if (this._session !== session) throw closed()
+    } finally {
+      if (this._restarting === restart) this._restarting = null
+    }
+  }
+
+  /** A wire call to the session: now — or, while an image-target restart is under way (between its
+   *  stop and its start the half has no session: it would refuse "notRunning", though the app stopped
+   *  nothing), once the session runs again. A failed restart's start error, "notRunning" when the
+   *  scene was closed meanwhile. */
+  private _wire<T>(name: string, call: (session: ARBase) => Promise<T>): Promise<T> {
+    const session = this._session
+    if (!session) return Promise.reject(new Error(`ARScene.${name}(): no session — open() the scene first`))
+    const restart = this._restarting
+    if (!restart || restart.session !== session) return call(session)
+    return restart.done.then(() => {
+      if (this._session !== session) throw new Error("notRunning")
+      return call(session)
     })
   }
 
@@ -513,7 +645,9 @@ export class ARScene extends Scene {
   private _place(anchor: Anchor, pose: ARPoseLike): void {
     anchor.worldMatrix = Mat4.compose(pose.position, pose.rotation)
     this._pinned.add(anchor)
-    this._pin(anchor, pose)
+    // during an image-target restart the restarted session pins it with the others (_pinAll)
+    const restart = this._restarting
+    if (!restart || restart.session !== this._session) this._pin(anchor, pose)
   }
 
   /** `root` onto the floor (the first horizontal plane of this session). */
@@ -526,7 +660,8 @@ export class ARScene extends Scene {
   private _pin(anchor: Anchor, pose: ARPoseLike): void {
     const session = this._session
     if (!session) return
-    session.anchor(anchor, wirePose(pose)).then(() => { if (this._session === session) anchor._setTracked(true) }, () => {})
+    const wire = wirePose(pose)
+    this._wire("anchor", s => s.anchor(anchor, wire)).then(() => { if (this._session === session) anchor._setTracked(true) }, () => {})
   }
 
   /** A session began: every pose anchor is pinned where it is. */
@@ -543,7 +678,7 @@ export class ARScene extends Scene {
     if (anchor === this._root) this._root = null
     const image = this._images.findIndex(t => t.anchor === anchor)
     if (image >= 0) this._images.splice(image, 1)
-    this._session?.release(anchor).catch(() => {})
+    this._wire("release", s => s.release(anchor)).catch(() => {})
     anchor._setTracked(false)
     this.remove(anchor)
     if (image >= 0 && this._session) this._restart()

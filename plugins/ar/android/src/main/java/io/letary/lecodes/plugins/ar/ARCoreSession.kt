@@ -14,9 +14,11 @@
 //  event comes from here.
 //
 //  The display ARCore is told of (`setDisplayGeometry`: its projection, its crop, its hit test) is the
-//  scene view's — `gl.viewport(scene)`, its size in the space its touches arrive in and the display's
-//  turn — read every frame and told again when it changes. Before the scene is presented its view has
-//  no size (the session starts during the warm render): the frame waits for one.
+//  scene view's — `gl.viewport(scene)`, its size in dp (the space the scene's touches arrive in) and the
+//  display's turn — read every frame and told again when it changes, in px: ARCore takes whole numbers,
+//  and a dp size rounded would bend the aspect. A hit test's dp point is scaled the same way. Before
+//  the scene is presented its view has no size (the session starts during the warm render): the frame
+//  waits for one.
 //
 //  Before the first session ARCore may need installing: `start` asks Google Play Services for AR
 //  (`requestInstall`), which shows the Play Store's dialog and resumes the activity; the start goes on
@@ -56,6 +58,7 @@ import com.google.ar.core.LightEstimate
 import com.google.ar.core.Plane
 import com.google.ar.core.Session
 import com.google.ar.core.exceptions.CameraNotAvailableException
+import com.google.ar.core.exceptions.NotYetAvailableException
 import com.google.ar.core.exceptions.UnavailableDeviceNotCompatibleException
 import com.google.ar.core.exceptions.UnavailableException
 import com.google.ar.core.exceptions.UnavailableUserDeclinedInstallationException
@@ -88,8 +91,9 @@ class ARCoreSession(
     private val gl = engine.gl
     private val main = Handler(Looper.getMainLooper())
 
-    /** A start that waits: for ARCore's availability, its install, the first frame. */
-    private class Starting(val options: StartOptions?, val reply: Reply<Unit, ARCode>)
+    /** A start that waits: for ARCore's availability, its install, the first frame whose camera image
+     *  can be read (`since`: the first frame that carried one, uptime ms). */
+    private class Starting(val options: StartOptions?, val reply: Reply<Unit, ARCode>) { var since = 0L }
     private var starting: Starting? = null
     private var installRequested = false
 
@@ -100,8 +104,12 @@ class ARCoreSession(
     private var cancelFrame: (() -> Unit)? = null
     /** The frame of the last `update()`: valid until the next one, which is what hitTest reads. */
     private var latest: Frame? = null
+    /** captureFrame()s waiting for a camera image ARCore hands over (capture()), each with the frames
+     *  it has waited. */
+    private class Capture(val reply: Reply<PluginFile, ARCode>) { var frames = 0 }
+    private val captures = ArrayList<Capture>()
     private var uv: FloatArray? = null
-    /** The display ARCore was last told of: the viewport's turn and size. */
+    /** The display ARCore was last told of: the viewport's turn and its size in px. */
     private var geometry = Triple(-1, 0, 0)
     private var lifecycle: Lifecycle? = null
     private var resumed = false
@@ -153,9 +161,10 @@ class ARCoreSession(
         if (mode != ARMode.WORLD) return reply.resolve(emptyList())
         val eye = frame.camera.pose
         val hits = ArrayList<HitResult>()
-        // the point is in the scene view's touch space — the space of the display geometry ARCore was
-        // told of (displayGeometry): handed over as it is
-        val result = try { frame.hitTest(x.toFloat(), y.toFloat()) } catch (e: Exception) { emptyList() }
+        // the point is in the scene view's touch space (dp); ARCore's display geometry is in px
+        // (displayGeometry): scaled by the same density
+        val px = density
+        val result = try { frame.hitTest((x * px).toFloat(), (y * px).toFloat()) } catch (e: Exception) { emptyList() }
         for (hit in result) {
             val plane = hit.trackable as? Plane
             val onPlane = plane != null && plane.subsumedBy == null && plane.isPoseInPolygon(hit.hitPose)
@@ -193,34 +202,11 @@ class ARCoreSession(
 
     override fun captureFrame(reply: Reply<PluginFile, ARCode>) {
         val frame = latest ?: return reply.reject(ARCode.NOT_RUNNING)
-        // the YUV image is ARCore's until closed: copied out here, encoded off the main thread
-        val (nv21, width, height) = try {
-            frame.acquireCameraImage().use { image -> Triple(nv21Of(image), image.width, image.height) }
-        } catch (e: Exception) {
-            Log.w(TAG, "[ar] captureFrame: ${e.message ?: e}")
-            return reply.reject(ARCode.FAILED)
-        }
-        val turn = uprightDegrees()
-        encoder.execute {
-            try {
-                val out = ByteArrayOutputStream()
-                YuvImage(nv21, ImageFormat.NV21, width, height, null).compressToJpeg(Rect(0, 0, width, height), 90, out)
-                var jpeg = out.toByteArray()
-                if (turn != 0) {
-                    // the sensor's image is landscape: turned to stand as the screen does
-                    val bitmap = BitmapFactory.decodeByteArray(jpeg, 0, jpeg.size)
-                    val turned = Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, Matrix().apply { postRotate(turn.toFloat()) }, true)
-                    val again = ByteArrayOutputStream()
-                    turned.compress(Bitmap.CompressFormat.JPEG, 90, again)
-                    jpeg = again.toByteArray()
-                    turned.recycle()
-                    bitmap.recycle()
-                }
-                reply.resolve(PluginFile(jpeg, "frame.jpg"))
-            } catch (e: Exception) {
-                reply.reject(ARCode.FAILED)
-            }
-        }
+        captures.add(Capture(reply))
+        // the latest frame's image when ARCore hands it over, else the frames that follow serve it
+        // (frame() → capture(); none while the activity is paused — the wait goes on at its resume);
+        // one that comes while others wait joins them
+        if (captures.size == 1 && resumed) capture(frame)
     }
 
     override fun close() = end()
@@ -312,6 +298,10 @@ class ARCoreSession(
 
     private fun frame() {
         val s = session ?: return
+        // a turn of the screen makes the activity again (the engine and its scene stay, LecodesEngine.
+        // attach): the old one's pause paused the session, the new one's resume is what resumes it —
+        // watching a lifecycle that is resumed already resumes the session at once
+        engine.getActivity()?.let { watch(it.lifecycle) }
         if (!resumed) return
         val scene = scene ?: return
         val texture = texture ?: return
@@ -326,6 +316,7 @@ class ARCoreSession(
             return
         }
         latest = frame
+        if (captures.isNotEmpty()) capture(frame)
         if (frame.timestamp == 0L) return   // no camera image yet
         val cam = frame.camera
         if (fitted) {
@@ -343,8 +334,10 @@ class ARCoreSession(
         }
 
         report(cam)
-        starting?.let { wait ->
-            // the first frame: tracking was the session's first event, the start resolves now
+        val wait = starting
+        if (wait != null && readable(wait, frame)) {
+            // the first frame whose camera image can be read: tracking was the session's first event,
+            // the start resolves now — a captureFrame() from here on has an image to read
             starting = null
             wait.reply.resolve()
         }
@@ -448,13 +441,13 @@ class ARCoreSession(
     // ── plumbing ─────────────────────────────────────────────────────────────
 
     /** ARCore's projection, its crop and its hit test are for the display it is told of: the scene
-     *  view's (its size in its touches' space, its turn), told again when it changed — before the
-     *  update, which applies it (and says so: `hasDisplayGeometryChanged`). False while the view has
-     *  no size. */
+     *  view's (its dp size in px, its turn), told again when it changed — before the update, which
+     *  applies it (and says so: `hasDisplayGeometryChanged`). False while the view has no size. */
     private fun displayGeometry(s: Session, scene: Scene3D): Boolean {
         val view = gl.viewport(scene)
-        val width = Math.round(view.width)
-        val height = Math.round(view.height)
+        val px = density
+        val width = Math.round(view.width * px)
+        val height = Math.round(view.height * px)
         if (width <= 0 || height <= 0) return false
         val now = Triple(view.rotation, width, height)
         if (now != geometry) {
@@ -463,6 +456,78 @@ class ARCoreSession(
         }
         return true
     }
+
+    /** Whether the start may resolve on `frame` (a timestamped one): its camera image can be read.
+     *  ARCore's CPU image lags its texture for a few frames after a resume — `acquireCameraImage`
+     *  throws NotYetAvailableException there (seen on a Xiaomi: the first captureFrame after the start
+     *  refused, one half a second later fine) — so the frame alone is not enough. Bounded: a device
+     *  whose image stays unreadable still starts after IMAGE_WAIT_MS (its captures wait, then fail)
+     *  rather than hang `open()`; another failure is not waited for — waiting does not cure it. */
+    private fun readable(wait: Starting, frame: Frame): Boolean {
+        val now = SystemClock.uptimeMillis()
+        if (wait.since == 0L) wait.since = now
+        try {
+            frame.acquireCameraImage().close()
+            return true
+        } catch (e: NotYetAvailableException) {
+            if (now - wait.since < IMAGE_WAIT_MS) return false
+            Log.w(TAG, "[ar] the camera image is not readable after ${IMAGE_WAIT_MS} ms: the start resolves without it (captureFrame may fail)")
+            return true
+        } catch (e: Exception) {
+            return true
+        }
+    }
+
+    /** Serve the waiting captureFrame()s from `frame`'s camera image. ARCore's CPU image lags its
+     *  texture: `acquireCameraImage` throws NotYetAvailableException for the first frames after a resume
+     *  and, its docs say, for a few frames at a time while the session runs — the next frame would serve
+     *  the capture, so it waits for it (frame() calls this each frame while one waits), at most
+     *  CAPTURE_WAIT_FRAMES; then it is refused "failed": the camera gave no image. Another exception
+     *  refuses at once — waiting does not cure it. The captures that wait together get ONE image, copied
+     *  and encoded once (each its own File): each asked for the latest camera image, and the one that
+     *  comes is the latest for all of them. */
+    private fun capture(frame: Frame) {
+        val copied = try {
+            // a frame with no timestamp has no camera image yet: none to hand over either. The YUV
+            // image is ARCore's until closed: copied out here, encoded off the main thread
+            if (frame.timestamp == 0L) null
+            else frame.acquireCameraImage().use { image -> Triple(nv21Of(image), image.width, image.height) }
+        } catch (e: NotYetAvailableException) {
+            null
+        } catch (e: Exception) {
+            Log.w(TAG, "[ar] captureFrame: ${e.message ?: e}")
+            for (reply in takeCaptures()) reply.reject(ARCode.FAILED)
+            return
+        }
+        if (copied == null) {
+            for (c in captures) c.frames++
+            val over = captures.filter { it.frames >= CAPTURE_WAIT_FRAMES }
+            if (over.isEmpty()) return
+            captures.removeAll(over)
+            Log.w(TAG, "[ar] captureFrame: the camera gave no image in $CAPTURE_WAIT_FRAMES frames")
+            for (c in over) c.reply.reject(ARCode.FAILED)
+            return
+        }
+        val (nv21, width, height) = copied
+        val replies = takeCaptures()
+        val turn = uprightDegrees()
+        encoder.execute {
+            val jpeg = try { jpegOf(nv21, width, height, turn) } catch (e: Exception) { null }
+            for (reply in replies) if (jpeg != null) reply.resolve(PluginFile(jpeg, "frame.jpg")) else reply.reject(ARCode.FAILED)
+        }
+    }
+
+    /** The waiting captures' replies, the wait emptied first (a reply settled may reach the app, whose
+     *  next captureFrame() then starts a wait of its own). */
+    private fun takeCaptures(): List<Reply<PluginFile, ARCode>> {
+        val replies = captures.map { it.reply }
+        captures.clear()
+        return replies
+    }
+
+    /** Device px per dp: the number the host divides the scene's touches by (its UI density), so a
+     *  viewport size or a touch point times it is the view's px. */
+    private val density: Float get() = context.resources.displayMetrics.density
 
     /** The background's rows [a b tx; c d ty]: where the view's corners land in the texture. */
     private fun uvOf(frame: Frame): FloatArray {
@@ -538,6 +603,8 @@ class ARCoreSession(
             starting = null
             wait.reply.reject(ARCode.FAILED)
         }
+        // a capture still waiting for its image: the session it waited on is over
+        for (reply in takeCaptures()) reply.reject(ARCode.NOT_RUNNING)
         installRequested = false
         for ((_, anchor) in anchors.values) anchor.detach()
         anchors.clear()
@@ -573,6 +640,11 @@ class ARCoreSession(
         private const val TAG = "LeCodes"
         private const val NEAR = 0.01f
         private const val FAR = 1000f
+        /** How long a start waits for a readable camera image after the first frame that carried one. */
+        private const val IMAGE_WAIT_MS = 2000L
+        /** How many frames a captureFrame() waits for a camera image ARCore hands over (the latest one
+         *  included): half a second at 60 fps, where the phone measured 6 frames after a resume. */
+        private const val CAPTURE_WAIT_FRAMES = 30
         /** captureFrame's JPEG encoder: off the GL thread. */
         private val encoder = Executors.newSingleThreadExecutor()
 
@@ -593,6 +665,22 @@ class ARCoreSession(
             floatArrayOf(p.position.x.toFloat(), p.position.y.toFloat(), p.position.z.toFloat()),
             floatArrayOf(p.rotation.x.toFloat(), p.rotation.y.toFloat(), p.rotation.z.toFloat(), p.rotation.w.toFloat()),
         )
+
+        /** An NV21 camera image as a JPEG, turned `turn` degrees (the sensor's image is landscape:
+         *  turned to stand as the screen does). */
+        private fun jpegOf(nv21: ByteArray, width: Int, height: Int, turn: Int): ByteArray {
+            val out = ByteArrayOutputStream()
+            YuvImage(nv21, ImageFormat.NV21, width, height, null).compressToJpeg(Rect(0, 0, width, height), 90, out)
+            val jpeg = out.toByteArray()
+            if (turn == 0) return jpeg
+            val bitmap = BitmapFactory.decodeByteArray(jpeg, 0, jpeg.size)
+            val turned = Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, Matrix().apply { postRotate(turn.toFloat()) }, true)
+            val again = ByteArrayOutputStream()
+            turned.compress(Bitmap.CompressFormat.JPEG, 90, again)
+            turned.recycle()
+            bitmap.recycle()
+            return again.toByteArray()
+        }
 
         /** A YUV_420_888 image as NV21 (Y, then V/U interleaved), whatever its strides. */
         private fun nv21Of(image: android.media.Image): ByteArray {

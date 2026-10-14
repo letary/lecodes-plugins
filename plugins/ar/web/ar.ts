@@ -29,6 +29,8 @@ const CAMERA_FOV = 68
 const NEAR = 0.01
 const FAR = 1000
 const RAD = Math.PI / 180
+/** How many animation frames a captureFrame() waits for the video to have a picture. */
+const CAPTURE_WAIT_FRAMES = 30
 
 type SensorsPermission = { requestPermission?: () => Promise<"granted" | "denied"> }
 
@@ -233,7 +235,20 @@ export const register = (host: PluginHost): void => {
 
       async captureFrame(): Promise<PluginFile> {
         const v = video
-        if (!running || !v || v.videoWidth === 0) throw new ARError("notRunning")
+        if (!running || !v) throw new ARError("notRunning")
+        // a running session's video can be without a picture for a moment (HAVE_CURRENT_DATA not
+        // reached, no size: a track that restarts or changes its size): the capture waits for the
+        // frames that follow, as the native halves wait for their camera image, rather than encode an
+        // empty canvas — at most CAPTURE_WAIT_FRAMES; a stop meanwhile is "notRunning"
+        const mine = generation
+        for (let frames = 0; v.readyState < 2 || v.videoWidth === 0; frames++) {
+          if (frames >= CAPTURE_WAIT_FRAMES) {
+            console.warn(`[ar] captureFrame: the camera gave no picture in ${CAPTURE_WAIT_FRAMES} frames`)
+            throw new ARError("failed")
+          }
+          await new Promise((resolve) => requestAnimationFrame(resolve))
+          if (mine !== generation) throw new ARError("notRunning")
+        }
         const canvas = document.createElement("canvas")
         canvas.width = v.videoWidth
         canvas.height = v.videoHeight

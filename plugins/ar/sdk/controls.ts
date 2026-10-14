@@ -63,6 +63,8 @@ export const attachControls = (scene: PlacingScene, target: Node, options: Contr
     if (parent) dir = dir.rotate(parent.quaternion.invert()) // into the parent's local frame
     dir = dir.withY(0)
     const k = Math.hypot(dir.x, dir.z)
+    // the move's delta over the view's size: both logical units (a scene touch's, displaySize's), so
+    // a drag across the view slides the target by its distance from the camera on every host
     const screen = Math.max(...scene.camera.displaySize)
     if (k > 1e-4 && screen > 0) {
       const dist = target.worldPosition.distanceTo(scene.camera.worldPosition)
