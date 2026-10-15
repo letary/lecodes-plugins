@@ -1,8 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- lecodes-plugins/ar: merged into the host app's manifest by the Gradle build. The camera
-     permission the contract's `@permission camera` is held to; ARCore OPTIONAL — an app that lists
+     permission the contract's `@permission camera` is held to (the camera feature declared optional
+     so Play does not infer a required camera from CAMERA); ARCore OPTIONAL — an app that lists
      the plugin still installs on a phone without it, and `start` rejects "unavailable" there. -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <uses-feature android:name="android.hardware.camera" android:required="false" />
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-feature android:name="android.hardware.camera.ar" android:required="false" />
 
