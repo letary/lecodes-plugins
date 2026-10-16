@@ -32,9 +32,9 @@ class LePushMessagingService : FirebaseMessagingService() {
     override fun onMessageReceived(message: RemoteMessage) {
         PushManager.ensureContext(applicationContext)
         val payload = PushManager.payloadFromData(message.data) ?: return
-        // Foregrounded same-project world: banner suppressed, "message" event instead (iOS
-        // willPresent). Everything else — background, killed, or another project on screen —
-        // shows the system notification.
+        // Foregrounded same-project world that handles it (setMessageHandled): banner suppressed,
+        // "message" event instead (iOS willPresent). Everything else — background, killed, another
+        // project on screen, or no foreground handler for it — shows the system notification.
         if (PushManager.onMessage(payload)) return
         showNotification(payload)
     }

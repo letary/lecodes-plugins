@@ -26,6 +26,9 @@ class PushService(private val events: PushEvents) : PushPlugin {
 
     override fun getLaunch(reply: Reply<PushPayload?, PushCode>) = reply.resolve(PushManager.getLaunch())
 
+    override fun setMessageHandled(handled: PushHandled, reply: Reply<Unit, PushCode>) =
+        PushManager.setMessageHandled(reply, handled)
+
     override fun close() {
         PushManager.removeSession(events)
     }

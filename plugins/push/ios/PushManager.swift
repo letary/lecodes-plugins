@@ -11,8 +11,16 @@
 //  dev bundles, generated shells) get "unavailable".
 //
 //  Wire payload (APNs userInfo): { aps: { alert: { title, body? }, badge?, sound },
-//  lecodes: { projectUuid, url?, data? } } — `lecodes.projectUuid` is stamped by the
+//  lecodes: { projectUuid, channel?, url?, data? } } — `lecodes.projectUuid` is stamped by the
 //  backend and routes multi-tenant display/taps; it is stripped before payloads reach JS.
+//  `lecodes.channel` is the push channel the notification was sent through (absent = sent
+//  outside one): it reaches JS as `PushPayload.channel`, and decides with the world's
+//  `setMessageHandled` set whether a foreground arrival is the app's ("message", no banner) or
+//  the system's (the banner).
+//
+//  A payload's `url` is the app's to route (the "tap" event / getLaunch): it does NOT ride the
+//  deep-link path (`app.launchUrl`, the "url" event). The only url the engine is seeded with is
+//  the launcher's `https://le.codes/qr/<projectUuid>`, which opens the project.
 //
 
 import Foundation
@@ -134,8 +142,9 @@ public final class PushManager: LeCodesNotificationHandler {
             case .denied: permission = .denied
             default: permission = .prompt
             }
-            let registered = projectUuid != nil && self.persistedRegistrations()[projectUuid!] != nil
-            reply.resolve(PushStatus(permission: permission, registered: registered))
+            // The address of this world's registration, from the store alone: no prompt, no I/O.
+            let address = projectUuid.flatMap { self.persistedRegistrations()[$0]?["address"] }
+            reply.resolve(PushStatus(permission: permission, registered: address != nil, address: address))
         }
     }
 
@@ -186,6 +195,31 @@ public final class PushManager: LeCodesNotificationHandler {
         reply.resolve(payload.appPayload)
     }
 
+    // MARK: - What the app handles in the foreground (setMessageHandled)
+
+    /// The current world's set: the channels with a "message" handler + whether the untyped
+    /// notifications have one. ONE set, the latest call's, attributed to the world that made it —
+    /// a payload is handled only while that world is still the current one; the set goes with its
+    /// session (the world's teardown closes it). Until a call is made nothing is handled: every
+    /// foreground arrival shows the system banner.
+    private var handled: (projectUuid: String, set: PushHandled)? = nil
+
+    func setMessageHandled(_ projectUuid: String?, _ set: PushHandled, _ reply: Reply<Void, PushCode>) {
+        // An unattributed world receives no notification, so there is nothing for it to handle.
+        guard let uuid = projectUuid else { return reply.reject(.unavailable) }
+        handled = (uuid, set)
+        reply.resolve()
+    }
+
+    /// The foreground rule: the payload's project is the current world's AND the app handles it —
+    /// its channel is in the set, or it has no channel and the untyped ones are handled.
+    private func isHandledInForeground(_ payload: Payload) -> Bool {
+        guard let handled, payload.projectUuid == engine?.currentProjectUuid,
+              handled.projectUuid == payload.projectUuid else { return false }
+        if let channel = payload.appPayload.channel { return handled.set.channels.contains(channel) }
+        return handled.set.untyped
+    }
+
     // MARK: - Backend registration
 
     private func registerWithBackend(_ uuid: String, user: String?, token: String,
@@ -218,11 +252,10 @@ public final class PushManager: LeCodesNotificationHandler {
 
     // MARK: - Delivery (LeCodesAppHooks handler + cold start)
 
-    /// One parsed notification. `appPayload` is what JS sees (routing fields stripped).
+    /// One parsed notification. `appPayload` is what JS sees (the routing field stripped).
     private struct Payload {
         let projectUuid: String
         let appPayload: PushPayload
-        let url: String?
     }
 
     /// The notification that launched (or re-routed) the current world — served by
@@ -240,9 +273,10 @@ public final class PushManager: LeCodesNotificationHandler {
             }
             app.badge = (aps["badge"] as? NSNumber)?.int32Value
         }
+        app.channel = lecodes["channel"] as? String
         app.url = lecodes["url"] as? String
         app.data = lecodes["data"] as? [String: Any]
-        return Payload(projectUuid: uuid, appPayload: app, url: app.url)
+        return Payload(projectUuid: uuid, appPayload: app)
     }
 
     /// `connectionOptions.notificationResponse` (buffered by LeCodesAppHooks) — the app was
@@ -269,15 +303,16 @@ public final class PushManager: LeCodesNotificationHandler {
     /// is always set before the redelivery is seen.)
     private var coldStartHandledId: String? = nil
 
-    /// Foreground receipt: the target app is on screen → no banner, deliver as the
-    /// "message" event; any other app's notification shows normally.
+    /// Foreground receipt: the target app is on screen AND handles it (setMessageHandled) → no
+    /// banner, deliver as the "message" event; everything else — another app's notification, or one
+    /// this app has no foreground handler for — shows the system banner.
     public func willPresent(_ notification: UNNotification,
                             completion completionHandler: @escaping (UNNotificationPresentationOptions) -> Void) {
         guard let payload = parse(notification.request.content.userInfo) else {
             return completionHandler([.banner, .sound, .list])
         }
         onMainThread { [self] in
-            if payload.projectUuid == engine?.currentProjectUuid {
+            if isHandledInForeground(payload) {
                 deliver { $0.message(payload.appPayload) }
                 completionHandler([])
             } else {
@@ -286,9 +321,10 @@ public final class PushManager: LeCodesNotificationHandler {
         }
     }
 
-    /// Tap while the process is alive: same-project world → warm "tap" event (+ the url
-    /// riding the deep-link path); any other project → re-enter the launcher with a seeded
-    /// QR URL (the same primitive quit() uses) and serve the payload via getLaunch.
+    /// Tap while the process is alive: same-project world → warm "tap" event (the payload's url
+    /// is the app's to route from it; it does not ride the deep-link path); any other project →
+    /// re-enter the launcher with a seeded QR URL (the same primitive quit() uses) and serve the
+    /// payload via getLaunch.
     public func didReceive(_ response: UNNotificationResponse,
                            completion completionHandler: @escaping () -> Void) {
         guard let payload = parse(response.notification.request.content.userInfo) else {
@@ -304,7 +340,6 @@ public final class PushManager: LeCodesNotificationHandler {
             guard let engine else { return completionHandler() }
             if payload.projectUuid == engine.currentProjectUuid {
                 deliver { $0.tap(payload.appPayload) }
-                if let url = payload.url { engine.emitUrl(url) }
             } else {
                 launchPayload = payload
                 engine.openLauncher(withUrl: "https://le.codes/qr/\(payload.projectUuid)")
@@ -319,7 +354,12 @@ public final class PushManager: LeCodesNotificationHandler {
     private struct WeakPushService { weak var service: PushService? }
 
     func attach(_ service: PushService) { sessions.append(.init(service: service)) }
-    func detach(_ service: PushService) { sessions.removeAll { $0.service === service || $0.service == nil } }
+    func detach(_ service: PushService) {
+        sessions.removeAll { $0.service === service || $0.service == nil }
+        // The last session of the world closed (its teardown): what it handled goes with it — the
+        // next world starts with nothing handled, as the contract says.
+        if sessions.isEmpty { handled = nil }
+    }
 
     private func deliver(_ event: (PushEvents) -> Void) {
         sessions.removeAll { $0.service == nil }

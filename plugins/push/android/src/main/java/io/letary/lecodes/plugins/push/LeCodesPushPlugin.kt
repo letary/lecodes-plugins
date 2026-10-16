@@ -8,7 +8,9 @@
 //    launchIntent   a tap that cold-started the app: its payload is parked for Push.getLaunch()
 //                   before the engine boots
 //    newIntent      a tap while the app lives — consumed, so the host skips its deep-link path
-//    foreground     a banner is suppressed only for a foregrounded same-project world
+//                   (the payload's url is the app's to route from the "tap" event)
+//    foreground     a banner is suppressed only for a foregrounded same-project world that
+//                   handles the notification (Push.setMessageHandled)
 //
 //  Delivery scope: the le.codes relay sends through Letary's Firebase project, so the shell's
 //  google-services.json must belong to it (the Android mirror of the iOS com.letary.* APNs

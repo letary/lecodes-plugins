@@ -38,6 +38,10 @@ public final class PushService: PushPlugin {
         PushManager.shared.getLaunch(engine?.currentProjectUuid, reply)
     }
 
+    public func setMessageHandled(_ handled: PushHandled, _ reply: Reply<Void, PushCode>) {
+        PushManager.shared.setMessageHandled(engine?.currentProjectUuid, handled, reply)
+    }
+
     public func close() {
         PushManager.shared.detach(self)
     }

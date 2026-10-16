@@ -10,6 +10,17 @@
 //     it to establish the event pipe).
 //   - Token rotation mints NEW addresses (the backend upsert key is the token) — onNewToken
 //     re-registers every persisted project and stores the fresh address.
+//   - A foreground arrival is the app's ("message", no banner) only when the world is the
+//     payload's project AND handles it (setMessageHandled: its channel is in the set, or it has no
+//     channel and the untyped ones are handled); every other one shows the system notification.
+//   - A payload's `url` is the app's to route from the "tap" event / getLaunch — it does NOT ride
+//     the deep-link path (`app.launchUrl`, the "url" event). The only url the engine is seeded with
+//     is the launcher's `https://le.codes/qr/<projectUuid>`, which opens the project.
+//
+//  Wire payload (the FCM data map, all strings — buildFcmBody's shape): projectUuid, projectName?,
+//  title, body?, channel?, url?, data? (a JSON object, serialized), badge?. `projectUuid` /
+//  `projectName` route the display and the taps and are stripped before the payload reaches JS;
+//  `channel` is the push channel it was sent through (absent = sent outside one).
 //
 
 package io.letary.lecodes.plugins.push
@@ -69,7 +80,12 @@ object PushManager {
     // ── sessions (the "push" service's event pipe) ───────────────────────────
 
     fun addSession(events: PushEvents) = synchronized(sessions) { sessions.add(events) }
-    fun removeSession(events: PushEvents) = synchronized(sessions) { sessions.remove(events) }
+    fun removeSession(events: PushEvents) {
+        val last = synchronized(sessions) { sessions.remove(events); sessions.isEmpty() }
+        // The last session of the world closed (its teardown): what it handled goes with it — the
+        // next world starts with nothing handled, as the contract says.
+        if (last) handled = null
+    }
 
     private fun emitToSessions(send: (PushEvents) -> Unit) {
         val snapshot = synchronized(sessions) { sessions.toList() }
@@ -87,8 +103,37 @@ object PushManager {
             prefs.getBoolean("permissionRequested", false) -> PushStatusPermission.DENIED
             else -> PushStatusPermission.PROMPT
         }
-        val registered = engine?.currentProjectUuid?.let { loadRegistration(it) != null } ?: false
-        return PushStatus(permission = permission, registered = registered)
+        // The address of this world's registration, from the store alone: no prompt, no I/O.
+        val address = engine?.currentProjectUuid?.let { loadRegistration(it)?.optString("address") }
+            ?.takeIf { it.isNotEmpty() }
+        return PushStatus(permission = permission, registered = address != null, address = address)
+    }
+
+    // ── what the app handles in the foreground (setMessageHandled) ───────────
+
+    /** The current world's set: the channels with a "message" handler + whether the untyped
+     *  notifications have one. ONE set, the latest call's, attributed to the world (its project
+     *  uuid) that made it — a payload is handled only while that world is still the current one;
+     *  the set goes with the world's last session (its teardown closes it). Until a call is made
+     *  nothing is handled: every foreground arrival shows the system notification. Read from the
+     *  FCM service's thread, written on the main one. */
+    @Volatile private var handled: Pair<String, PushHandled>? = null
+
+    fun setMessageHandled(reply: Reply<Unit, PushCode>, set: PushHandled) {
+        // An unattributed world receives no notification, so there is nothing for it to handle.
+        val uuid = engine?.currentProjectUuid ?: return reply.reject(PushCode.UNAVAILABLE)
+        handled = uuid to set
+        reply.resolve()
+    }
+
+    /** The foreground rule: the payload's project is the current world's AND the app handles it —
+     *  its channel is in the set, or it has no channel and the untyped ones are handled. */
+    private fun isHandledInForeground(payload: JSONObject): Boolean {
+        val (uuid, set) = handled ?: return false
+        val projectUuid = payload.optString("projectUuid")
+        if (projectUuid != engine?.currentProjectUuid || projectUuid != uuid) return false
+        val channel = payload.optString("channel").takeIf { payload.has("channel") && it.isNotEmpty() }
+        return if (channel != null) channel in set.channels else set.untyped
     }
 
     fun register(reply: Reply<PushRegistration, PushCode>, user: String?) {
@@ -139,11 +184,10 @@ object PushManager {
 
     // ── FCM entry points (LePushMessagingService) ────────────────────────────
 
-    /** @return true when handled as a foreground same-project "message" (banner suppressed). */
+    /** @return true when handled as a foreground same-project "message" the app handles
+     *  (setMessageHandled) — the banner is then suppressed; false = show the system notification. */
     fun onMessage(payload: JSONObject): Boolean {
-        val e = engine ?: return false
-        val uuid = e.currentProjectUuid ?: return false
-        if (!isForeground || uuid != payload.optString("projectUuid")) return false
+        if (!isForeground || !isHandledInForeground(payload)) return false
         val message = toJsPayload(payload)
         emitToSessions { it.message(message) }
         return true
@@ -173,7 +217,8 @@ object PushManager {
     }
 
     /** Warm tap (onNewIntent). @return true when consumed — the caller must then SKIP the
-     *  generic deep-link path (a same-project tap must not reload the running app). */
+     *  generic deep-link path (a same-project tap must not reload the running app, and the
+     *  payload's url is the app's to route from the "tap" event, never the engine's). */
     fun handleTapIntent(intent: Intent): Boolean {
         val raw = intent.getStringExtra(EXTRA_PAYLOAD) ?: return false
         intent.removeExtra(EXTRA_PAYLOAD)
@@ -183,8 +228,6 @@ object PushManager {
         if (projectUuid == e.currentProjectUuid) {
             val tap = toJsPayload(payload)
             emitToSessions { it.tap(tap) }
-            val url = payload.optString("url")
-            if (url.isNotEmpty()) e.emitUrl(url)
         } else {
             launchPayload = payload   // the new world reads it via getLaunch()
             e.openLauncher("https://le.codes/qr/$projectUuid")
@@ -201,6 +244,7 @@ object PushManager {
             .put("projectUuid", uuid)
             .put("title", data["title"] ?: "")
         data["projectName"]?.let { payload.put("projectName", it) }
+        data["channel"]?.takeIf { it.isNotEmpty() }?.let { payload.put("channel", it) }
         data["body"]?.let { payload.put("body", it) }
         data["url"]?.let { payload.put("url", it) }
         data["badge"]?.toIntOrNull()?.let { payload.put("badge", it) }
@@ -210,6 +254,7 @@ object PushManager {
 
     /** The parked payload → the contract's: the routing fields never reach the app. */
     private fun toJsPayload(payload: JSONObject): PushPayload = PushPayload(
+        channel = if (payload.has("channel")) payload.optString("channel") else null,
         title = payload.optString("title"),
         body = if (payload.has("body")) payload.optString("body") else null,
         url = if (payload.has("url")) payload.optString("url") else null,
