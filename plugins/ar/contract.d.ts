@@ -106,6 +106,11 @@ export interface AREvents {
   /** The session failed and is over: "unavailable" (no ARKit / ARCore support, ARCore not
    *  installed and declined), "camera" (the camera could not be used), "failed". */
   error: { code: ARErrorCode, message: string }
+  /** The session is over, and not by `stop()`: the user left it ("user" — the browser's back / exit
+   *  of an immersive WebXR session) or the system took it ("system"). Not an error: ARScene closes
+   *  the scene. ARKit and ARCore never end a session by themselves (an interruption is `tracking`
+   *  limited): the native halves do not send it. @since 2 */
+  ended: { reason: "user" | "system" }
 }
 
 export interface AR extends Service<"ar", ARParams, AREvents> {

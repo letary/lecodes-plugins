@@ -369,6 +369,11 @@ public enum ARErrorCode: String {
     case failed
 }
 
+public enum AREndedReason: String {
+    case user
+    case system
+}
+
 // MARK: - AR
 
 /// The codes the calls of "ar" reject with.
@@ -464,6 +469,18 @@ public struct AREvents {
             w.beginObject(2)
             w.key("code"); w.string(code.rawValue)
             w.key("message"); w.string(message)
+            w.end()
+        }
+    }
+
+    /// The session is over, and not by `stop()`: the user left it ("user" — the browser's back / exit
+    /// of an immersive WebXR session) or the system took it ("system"). Not an error: ARScene closes
+    /// the scene. ARKit and ARCore never end a session by themselves (an interruption is `tracking`
+    /// limited): the native halves do not send it.
+    public func ended(reason: AREndedReason) {
+        self.channel.emit("ended") { w in
+            w.beginObject(1)
+            w.key("reason"); w.string(reason.rawValue)
             w.end()
         }
     }

@@ -74,6 +74,10 @@ export type ARSceneEvents = {
   plane: (event: ARPlaneEvent) => void
   light: (estimate: ARLightEstimate) => void
   error: (error: ARError) => void
+  /** The session ended on its own — the user left it (the back gesture of an immersive web session)
+   *  or the system took it — and the scene closes (back to the previous destination), as if the user
+   *  had pressed back. Not an error. Sent before the close. */
+  end: (reason: "user" | "system") => void
 }
 
 export type AnchorEvents = NodeEvents & {
@@ -96,7 +100,7 @@ const wirePose = (p: ARPoseLike): Pose => {
 
 /**
  * A node the AR session drives: it follows a place in the room (`scene.anchor(pose)`, `scene.root`),
- * an image (`scene.createAnchor(image)`) or a QR code (`scene.createCodeAnchor(text, size)`). Put
+ * an image (`scene.createAnchor(image)`) or a QR code (`scene.createQRAnchor(text, size)`). Put
  * content under it. `tracked` says whether the session holds it now; `track` / `untrack` fire when
  * that changes.
  */
@@ -134,7 +138,7 @@ export class Anchor extends Node {
 
 /**
  * An anchor that follows an image (`scene.createAnchor(image, physicalWidth)`) or a printed QR code
- * (`scene.createCodeAnchor(text, size)`, `code` its text): while tracked it sits on it — a rigid pose
+ * (`scene.createQRAnchor(text, size)`, `code` its text): while tracked it sits on it — a rigid pose
  * in metres, no scale: its centre, Y out of it, the image in X (its width; a code's top edge) and Z
  * (towards its bottom). How big it is, is `extent`.
  */
@@ -155,7 +159,7 @@ export class ImageAnchor extends Anchor {
    *  code's is [size, size] from the start (a code is square). */
   get extent(): [number, number] { return [this._extent[0], this._extent[1]] }
 
-  /** The text of the QR code the anchor follows (`createCodeAnchor`); null for an image's. */
+  /** The text of the QR code the anchor follows (`createQRAnchor`); null for an image's. */
   get code(): string | null { return this._code }
 }
 
@@ -276,7 +280,7 @@ export class ARScene extends Scene {
   private _startOut: { session: ARBase, closed: boolean, images: boolean, codes: boolean } | null = null
   /** A `setImages` / `setCodes` is due at the end of this turn (`_setTargets`). */
   private readonly _due = { images: false, codes: false }
-  /** The QR targets (`createCodeAnchor`). */
+  /** The QR targets (`createQRAnchor`). */
   private readonly _codes: { anchor: ImageAnchor, text: string, size: number }[] = []
   /** This host's half is older than the QR targets: said once. */
   private _codesWarned = false
@@ -357,7 +361,7 @@ export class ARScene extends Scene {
    *  of codes is updated in place. The web finds codes first (WebXR); on a host whose `ar` plugin does
    *  not track them the anchor is never tracked, and the console says so. `text` null or "" = ANY
    *  code: the first symbol decoded (a test, a plaque whose text the app does not know). */
-  createCodeAnchor(text: string | null, size: number): ImageAnchor {
+  createQRAnchor(text: string | null, size: number): ImageAnchor {
     const anchor = new ImageAnchor(size)
     anchor._code = text ?? ""
     anchor._extent = [size, size]
@@ -371,7 +375,7 @@ export class ARScene extends Scene {
       this._codesWarned = true
       return anchor
     }
-    this._codes.push({ anchor, text, size })
+    this._codes.push({ anchor, text: text ?? "", size })
     this._setTargets("codes")
     return anchor
   }
@@ -565,6 +569,13 @@ export class ARScene extends Scene {
       if (this._session !== session || !p) return
       this._drop(session)
       this._emit("error", { code: p.code, message: p.message })
+    })
+    session.on("ended", p => {
+      if (this._session !== session || !p) return
+      // over, not by close(): the scene goes with it — the user's back gesture, as the router's
+      this._drop(session)
+      this._emit("end", p.reason)
+      this.close()
     })
     this._session = session
     this._baseIntensity = this.environmentIntensity

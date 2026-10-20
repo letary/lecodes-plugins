@@ -386,6 +386,8 @@ export type PlaneType = "horizontal" | "vertical"
 
 export type ARErrorCode = "unavailable" | "camera" | "failed"
 
+export type AREndedReason = "user" | "system"
+
 // ---- AR ----
 
 /** The codes the calls of "ar" reject with. */
@@ -420,6 +422,11 @@ export interface AREvents {
   /** The session failed and is over: "unavailable" (no ARKit / ARCore support, ARCore not
    *  installed and declined), "camera" (the camera could not be used), "failed". */
   error(payload: { code: ARErrorCode, message: string }): void
+  /** The session is over, and not by `stop()`: the user left it ("user" — the browser's back / exit
+   *  of an immersive WebXR session) or the system took it ("system"). Not an error: ARScene closes
+   *  the scene. ARKit and ARCore never end a session by themselves (an interruption is `tracking`
+   *  limited): the native halves do not send it. */
+  ended(payload: { reason: AREndedReason }): void
 }
 
 /** The service "ar".
@@ -482,6 +489,7 @@ export const registerAR = (host: PluginHost, make: (params: ARParams, events: AR
       anchor: (payload) => channel.emit("anchor", payload),
       light: (payload) => channel.emit("light", payload),
       error: (payload) => channel.emit("error", payload),
+      ended: (payload) => channel.emit("ended", payload),
     }
     const plugin = make(readARParams(params) ?? {}, events)
     const call = async (method: string, args: unknown[]): Promise<unknown> => {

@@ -308,10 +308,12 @@ export const createWebXRArm = (gl: XRGL, params: ARParams, events: AREvents, res
 
   /** The session ended by itself (the user left it, the browser took it back): the contract's
    *  `error` — the session is over. */
+  /** The session ended by itself (the user left it — the browser's back; the browser took it back):
+   *  the contract's `ended` — the session is over, not an error. The browser says no reason: "user". */
   const onSessionEnd = () => {
     const wasRunning = running
     end()
-    if (wasRunning) events.error({ code: "failed", message: "the AR session ended" })
+    if (wasRunning) events.ended({ reason: "user" })
   }
 
   return {
