@@ -34,18 +34,27 @@ export interface PluginGL {
   /** The pose of the scene's camera (its world matrix). */
   setCameraMatrix(scene: number, m16: ArrayLike<number>): void
   /** A projection the half computes (column-major, OpenGL clip conventions), with the near / far it
-   *  was built with, in place of the scene's fov projection. */
+   *  was built with, in place of the scene's fov projection: drawn as it is — an off-centre one (a
+   *  camera's intrinsics) too. Made for one view: a change of `viewport` wants a new one. */
   setProjection(scene: number, m16: ArrayLike<number>, near: number, far: number): void
   /** Back to the scene's own (fov) projection. */
   clearProjection(scene: number): void
-  /** The scene's background: a playing video behind the scene, through `uv` — the affine map from
-   *  the viewport's normalized coordinates (0,0 top-left) to the video's, row-major
-   *  [a, b, tx, c, d, ty] (identity by default). null = none. */
-  setBackground(scene: number, video: HTMLVideoElement | null, uv?: ArrayLike<number>): void
-  /** The web has no external textures: a video is handed to setBackground as it is. Always null. */
+  /** The scene's background, behind the scene: a playing video (a camera's stream), or a canvas the
+   *  half (or an engine it runs) draws the camera's picture on; null = none. `uv` = the affine map
+   *  from the viewport's normalized coordinates (0,0 top-left) to the picture's, row-major
+   *  [a, b, tx, c, d, ty] (identity by default). Web Lite shows the element itself: moved under the
+   *  scene's canvas (its inline style replaced: absolute, the scene's box filled, `object-fit: cover`
+   *  — `uv` is not read; a canvas sized to `viewport` × devicePixelRatio is shown 1:1), taken out of
+   *  the page when it is replaced or cleared. The web player (a preview) shows a video only. */
+  setBackground(scene: number, source: HTMLVideoElement | HTMLCanvasElement | null, uv?: ArrayLike<number>): void
+  /** The web has no external textures: a video or a canvas is handed to setBackground as it is.
+   *  Always null. */
   createExternalTexture(): null
-  /** `body` before each frame (the page's animation frame), until the returned function is called —
-   *  or the world swap. */
+  /** `body` before each frame of the 3D engine, until the returned function is called — or the
+   *  world swap: in the host's own animation frame, before the tick and the render, so what a body
+   *  sets (a pose, a projection) is that frame's picture. A requestAnimationFrame callback of the
+   *  half's own is a frame late unless the browser runs it before the host's (callbacks run in the
+   *  order they were asked for). Web Lite runs the bodies while a scene is on show. */
   onFrame(body: () => void): () => void
   /** The composite of the scene's next frame — the 3D picture, not the UI over it: RGBA8, top row
    *  first, width, height; null (0 × 0) when the scene is not the one presented. */
