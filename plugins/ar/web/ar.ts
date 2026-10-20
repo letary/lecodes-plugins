@@ -15,8 +15,9 @@
 // the arm that started. Before a start (and after a stop) there is no arm: the calls that need a
 // running session reject "notRunning".
 //
-// `resources` = the manifest's `web.resources` (the QR detector's wasm, ./qrAnchor.ts), handed by the
-// host's build as a function: nothing of it is fetched until the WebXR arm is given a code.
+// `resources` = the manifest's `web.resources` (the QR detector's worker, ./qrAnchorWorker.ts, and
+// through it the wasm), handed by the host's build as a function: nothing of it is fetched until the
+// WebXR arm is given a code.
 //
 // The channel is the contract's (../contract.d.ts): ar.gen.ts is generated from it, this file
 // registers its service.

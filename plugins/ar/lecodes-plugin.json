@@ -21,7 +21,7 @@
   "web": {
     "register": "web/ar.ts",
     "resources": {
-      "qrAnchorWasm": { "module": "./web/qr-anchor/qr_anchor_wasm_bg.wasm", "as": "url" }
+      "qrAnchorWorker": { "module": "./web/qrAnchorWorker.ts", "as": "worker-url" }
     }
   }
 }

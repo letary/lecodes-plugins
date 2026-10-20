@@ -139,7 +139,8 @@ export interface CameraView extends View<"camera", CameraParams, CameraEvents> {
   handed to `register` under these names (a function: nothing is fetched before the half asks), so
   the half names no bundler. A resource's `module` is a file of a dependency
   (`maplibre-gl/dist/maplibre-gl.css`) or, starting with `./`, a file of the plugin's own folder
-  (`ar`: `./web/qr-anchor/qr_anchor_wasm_bg.wasm`, a blob committed beside the half).
+  (`ar`: `./web/qrAnchorWorker.ts` as `worker-url`, its QR detector's worker — the wasm it loads,
+  a blob committed beside the half, is an asset the bundler emits with it).
 - `lecodes plugin gen` holds the manifest to the plugin's folders.
 
 ## Plugins

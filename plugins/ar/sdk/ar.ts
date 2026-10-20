@@ -355,10 +355,11 @@ export class ARScene extends Scene {
    *  `size` = the printed side of the symbol in metres (its modules, no quiet zone): how far it is
    *  comes from it. Hidden while not tracked. Before `open()`, or any time: on a running scene the set
    *  of codes is updated in place. The web finds codes first (WebXR); on a host whose `ar` plugin does
-   *  not track them the anchor is never tracked, and the console says so. */
-  createCodeAnchor(text: string, size: number): ImageAnchor {
+   *  not track them the anchor is never tracked, and the console says so. `text` null or "" = ANY
+   *  code: the first symbol decoded (a test, a plaque whose text the app does not know). */
+  createCodeAnchor(text: string | null, size: number): ImageAnchor {
     const anchor = new ImageAnchor(size)
-    anchor._code = text
+    anchor._code = text ?? ""
     anchor._extent = [size, size]
     anchor._scene = this
     anchor._hideUntracked = true

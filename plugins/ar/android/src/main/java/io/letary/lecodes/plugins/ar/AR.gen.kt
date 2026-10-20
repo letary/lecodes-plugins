@@ -104,7 +104,10 @@ data class ImageTarget(
  * the native halves later.
  */
 data class QRTarget(
-    /** The code's text: a symbol with another text is not this target. */
+    /**
+     * The code's text: a symbol with another text is not this target. "" = ANY code (the first
+     * one decoded): a test, or a plaque whose text is not known to the app.
+     */
     val text: String,
     /** The printed side of the symbol (its modules, no quiet zone), metres. */
     val size: Double,

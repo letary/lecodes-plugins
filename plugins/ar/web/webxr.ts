@@ -51,7 +51,9 @@ export type XRPresentation = {
   /** Leave the session's frames (the session goes on). */
   end(): void
   /** The camera's picture of the next frame (asked for in `onFrame`: that frame's) — RGBA8, or gray
-   *  at most `maxWidth` wide; null without the `camera-access` feature. */
+   *  at most `maxWidth` wide (resolved a frame or more later: the engine does not wait for its read;
+   *  its projection and pose still those of the frame it was taken in, its bytes a buffer of its
+   *  own); null without the `camera-access` feature. */
   captureCamera(options?: { gray?: false, maxWidth?: number }): Promise<CameraImage | null>
   captureCamera(options: { gray: true, maxWidth?: number }): Promise<CameraGray | null>
 }
@@ -109,7 +111,7 @@ export type AnchorWait = { pose: Pose, wanted(): boolean, settle(anchor: XRAncho
 type Anchored = { anchor: XRAnchor, tracked: boolean, seen: boolean }
 
 /** The WebXR arm of one session (`registerAR`'s make). `resources`: the manifest's (the QR
- *  detector's wasm), asked for with the first code. */
+ *  detector's worker), asked for with the first code. */
 export const createWebXRArm = (gl: XRGL, params: ARParams, events: AREvents, resources?: () => Promise<ARWebResources>): ARPlugin => {
   const scene = params.scene
   let generation = 0
@@ -147,7 +149,7 @@ export const createWebXRArm = (gl: XRGL, params: ARParams, events: AREvents, res
     capture: (maxWidth) => presentation ? presentation.captureCamera({ gray: true, maxWidth }) : Promise.resolve(null),
     anchor: (wait) => { anchorsDue.push(wait) },
     anchors: () => features.has("anchors"),
-    wasmUrl: async () => (await resources?.())?.qrAnchorWasm,
+    workerUrl: async () => (await resources?.())?.qrAnchorWorker,
   })
 
   const refuseSelect = (ev: Event) => ev.preventDefault()

@@ -38,7 +38,8 @@ export interface ImageTarget {
  *  symbol's centre, Y out of it, X along its top edge, Z towards its bottom. Web (WebXR) first;
  *  the native halves later. */
 export interface QRTarget {
-  /** The code's text: a symbol with another text is not this target. */
+  /** The code's text: a symbol with another text is not this target. "" = ANY code (the first
+   *  one decoded): a test, or a plaque whose text is not known to the app. */
   text: string
   /** The printed side of the symbol (its modules, no quiet zone), metres. */
   size: f64

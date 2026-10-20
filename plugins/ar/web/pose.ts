@@ -128,6 +128,22 @@ export const interpolate = (a: PoseLike, b: PoseLike, t: number): PoseLike => ({
   rotation: slerp(a.rotation, b.rotation, t),
 })
 
+/** `point` (in the view's space) in the pixels of a picture of `width` × `height` that the view's
+ *  projection covers (x right, y DOWN, pixel centres at integers + ½ as GL window coordinates); null
+ *  when it is behind the camera. */
+export const projectToPixels = (point: V3, projection: ArrayLike<number>, inverseView: ArrayLike<number>, width: number, height: number): [number, number] | null => {
+  const v = inverseView, p = projection
+  const cx = v[0]! * point.x + v[4]! * point.y + v[8]! * point.z + v[12]!
+  const cy = v[1]! * point.x + v[5]! * point.y + v[9]! * point.z + v[13]!
+  const cz = v[2]! * point.x + v[6]! * point.y + v[10]! * point.z + v[14]!
+  const cw = v[3]! * point.x + v[7]! * point.y + v[11]! * point.z + v[15]!
+  const x = p[0]! * cx + p[4]! * cy + p[8]! * cz + p[12]! * cw
+  const y = p[1]! * cx + p[5]! * cy + p[9]! * cz + p[13]! * cw
+  const w = p[3]! * cx + p[7]! * cy + p[11]! * cz + p[15]! * cw
+  if (!(w > 0)) return null
+  return [(x / w + 1) * width / 2, (1 - y / w) * height / 2]
+}
+
 /** Does `point` (in the view's space) fall inside the view: in front of the camera and within its
  *  picture — `projection` × `inverseView` × point in clip space, |x|, |y| ≤ w, w > 0.
  *  `inverseView` = the inverse of the view's pose (view.transform.inverse.matrix). */
