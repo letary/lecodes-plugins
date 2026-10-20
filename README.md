@@ -136,7 +136,10 @@ export interface CameraView extends View<"camera", CameraParams, CameraEvents> {
 - iOS: `infoPlist` (usage strings), `entitlements`, `packages`. Android: `dependencies` (Maven; a
   `platform:` prefix is a BoM), `gradlePlugins`; `<uses-permission>` and services are the half's own
   `AndroidManifest.xml`. Web: `dependencies` (npm), `resources` — what the half asks of its bundler,
-  handed to `register` under these names, so the half names no bundler.
+  handed to `register` under these names (a function: nothing is fetched before the half asks), so
+  the half names no bundler. A resource's `module` is a file of a dependency
+  (`maplibre-gl/dist/maplibre-gl.css`) or, starting with `./`, a file of the plugin's own folder
+  (`ar`: `./web/qr-anchor/qr_anchor_wasm_bg.wasm`, a blob committed beside the half).
 - `lecodes plugin gen` holds the manifest to the plugin's folders.
 
 ## Plugins
@@ -152,7 +155,7 @@ export interface CameraView extends View<"camera", CameraParams, CameraEvents> {
 | `push` | service | `push` | no |
 | `browser` | service + view | `browser`, `webView` | yes: a popup, an iframe (own-origin pages) |
 | `webrtc` | service + view | `rtcMedia`, `rtcPeerConnection`, `rtcVideo` | yes: the browser's own WebRTC |
-| `ar` | service | `ar` | yes: the camera under the scene, turned by the sensors (no planes, no hit test, no images) |
+| `ar` | service | `ar` | yes: WebXR where Chrome has it (ARCore: hit tests, anchors, QR codes — qr-anchor's wasm), else the camera under the scene, turned by the sensors (no planes, no images) |
 
 ## Naming
 
