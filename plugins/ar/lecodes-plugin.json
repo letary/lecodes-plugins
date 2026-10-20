@@ -3,7 +3,7 @@
   "name": "AR",
   "version": "2.0.0",
   "sdk": "^2.0.0",
-  "description": "World tracking over the device camera — ARKit on iOS, ARCore on Android, WebXR (immersive-ar over ARCore) in Chrome on Android, elsewhere on the web the camera under the scene turned by the sensors: planes, hit tests, anchors, image targets, the estimated light. The app's side is ARScene.",
+  "description": "World tracking over the device camera — ARKit on iOS, ARCore on Android, WebXR (immersive-ar over ARCore) in Chrome on Android, elsewhere on the web the camera under the scene turned by the sensors: planes, hit tests, anchors, image targets, QR-code targets (the contract's; the WebXR arm tracks them — qr-anchor's wasm — the native halves not yet), the estimated light. The app's side is ARScene.",
   "ios": {
     "module": "LeCodesAR",
     "register": "LeCodesARPlugin",
@@ -19,6 +19,9 @@
     ]
   },
   "web": {
-    "register": "web/ar.ts"
+    "register": "web/ar.ts",
+    "resources": {
+      "qrAnchorWasm": { "module": "./web/qr-anchor/qr_anchor_wasm_bg.wasm", "as": "url" }
+    }
   }
 }

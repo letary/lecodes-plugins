@@ -1,9 +1,9 @@
 // ar on the web: two arms, one chosen at each start.
 //   - WebXR (./webxr.ts): an `immersive-ar` session — Chrome on Android, over ARCore — where the
 //     browser has one AND the host's engine draws into it (`host.gl.presentXR`: Web Lite's). SLAM:
-//     the position too, hit tests, anchors, the light, the camera's picture for captureFrame. The
-//     camera is the browser's, the scene drawn into the session's layer, the page's UI its DOM
-//     overlay.
+//     the position too, hit tests, anchors, the light, the camera's picture for captureFrame, the
+//     QR codes found in it (./qrAnchor.ts). The camera is the browser's, the scene drawn into the
+//     session's layer, the page's UI its DOM overlay.
 //   - plain (./plain.ts): everywhere else (Safari, a desktop browser, the web player): the camera's
 //     picture under the scene (the host's background), the scene's camera turned by the device's
 //     sensors (./orientation.ts); the device never moves, nothing is found.
@@ -15,14 +15,18 @@
 // the arm that started. Before a start (and after a stop) there is no arm: the calls that need a
 // running session reject "notRunning".
 //
+// `resources` = the manifest's `web.resources` (the QR detector's wasm, ./qrAnchor.ts), handed by the
+// host's build as a function: nothing of it is fetched until the WebXR arm is given a code.
+//
 // The channel is the contract's (../contract.d.ts): ar.gen.ts is generated from it, this file
 // registers its service.
 
 import { ARError, registerAR, type ARPlugin, type PluginHost } from "./ar.gen"
 import { createPlainArm } from "./plain"
+import type { ARWebResources } from "./qrAnchor"
 import { createWebXRArm, webxrSupported, type XRGL } from "./webxr"
 
-export const register = (host: PluginHost): void => {
+export const register = (host: PluginHost, resources?: () => Promise<ARWebResources>): void => {
   if (typeof navigator === "undefined" || !navigator.mediaDevices?.getUserMedia) return
   // taken while registering: a half that drives the 3D engine says so (a host makes its canvas for a
   // background then)
@@ -58,7 +62,7 @@ export const register = (host: PluginHost): void => {
         let chosen: ARPlugin
         try {
           chosen = await webxrSupported(gl)
-            ? (webxr ??= createWebXRArm(gl, params, events))
+            ? (webxr ??= createWebXRArm(gl, params, events, resources))
             : (plain ??= createPlainArm(gl, params, events))
         } finally {
           choosing = false
@@ -74,6 +78,7 @@ export const register = (host: PluginHost): void => {
       },
       stop() { return leave()?.stop() },
       setImages(images) { return running().setImages(images) },
+      setCodes(codes) { return running().setCodes(codes) },
       hitTest(x, y, target) { return running().hitTest(x, y, target) },
       anchor(entity, pose) { return running().anchor(entity, pose) },
       release(entity) { return arm?.release(entity) },

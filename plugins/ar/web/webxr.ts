@@ -1,8 +1,10 @@
 // ar on the web, the WebXR arm: an `immersive-ar` session — Chrome on Android, over ARCore — where
 // the browser has one (./ar.ts picks it at start). SLAM: the device is tracked in the room, its
 // position too, in metres; what `anchor()` pins stays where it was put, and is kept true by the
-// session's anchors. Nothing is FOUND: no plane, no image (a marker is a later step), so the `plane`
-// and `image` events never come; `hitTest` answers the session's hit tests (on the surfaces ARCore
+// session's anchors. What is FOUND is a QR code (`StartOptions.codes` / `setCodes`): ./qrAnchor.ts
+// looks for it in the camera's picture (qr-anchor's wasm) and pins its entity with an anchor — the
+// `image` event says when it is tracked. No plane, no image target (the `plane` event never comes, an
+// image's `image` event neither); `hitTest` answers the session's hit tests (on the surfaces ARCore
 // estimates); `light` comes from its light estimate.
 //
 // Who draws what. The camera is the BROWSER's: it composites the session's layer over it. The host's
@@ -17,8 +19,10 @@
 // began with, Y up, metres — the contract's. `gravityAndHeading` has no compass here: gravity alone.
 //
 // The frame. The engine's XR frame calls `onXRFrame` after it set the camera and before it renders:
-// the tracking state, the anchors' poses (each frame), the hit tests and the anchors asked for since
-// the last frame (they need an XRFrame), the light. `start` resolves at the session's first frame —
+// the tracking state, the anchors' poses (each frame), the QR codes' (their anchors, the camera's
+// picture asked for when one is due), the hit tests and the anchors asked for since the last frame
+// (they need an XRFrame — the app's `anchor()` and the codes' alike), the light. `start` resolves at
+// the session's first frame —
 // ARScene presents its scene after it: until then, and while the scene is covered, the camera alone
 // shows under the page.
 //
@@ -30,18 +34,26 @@
 
 import {
   ARError, type ARParams, type AREvents, type ARPlugin, type HitResult, type HitTarget, type ImageTarget, type PluginFile,
-  type PluginGL, type Pose, type StartOptions, type TrackingReason, type TrackingState,
+  type PluginGL, type Pose, type QRTarget, type StartOptions, type TrackingReason, type TrackingState,
 } from "./ar.gen"
+import { compose, invert } from "./pose"
+import { createQRTracker, type ARWebResources } from "./qrAnchor"
 
 /** The camera's picture of a frame, RGBA8, the top row first. */
 type CameraImage = { rgba: Uint8Array, width: number, height: number }
+
+/** The camera's picture of a frame in gray: a byte per pixel, the top row first, with the view of
+ *  that frame (its projection, its pose in the session's space: column-major). */
+export type CameraGray = { data: Uint8Array, width: number, height: number, projection: Float32Array, viewMatrix: Float32Array }
 
 /** What `presentXR` hands back (lecodes-web-shared's XRPresentation, as a shape). */
 export type XRPresentation = {
   /** Leave the session's frames (the session goes on). */
   end(): void
-  /** The camera's picture of the next frame; null without the `camera-access` feature. */
-  captureCamera(): Promise<CameraImage | null>
+  /** The camera's picture of the next frame (asked for in `onFrame`: that frame's) — RGBA8, or gray
+   *  at most `maxWidth` wide; null without the `camera-access` feature. */
+  captureCamera(options?: { gray?: false, maxWidth?: number }): Promise<CameraImage | null>
+  captureCamera(options: { gray: true, maxWidth?: number }): Promise<CameraGray | null>
 }
 
 /** The host's gl facade with its WebXR member — Web Lite's (lecodes-web-shared's GLFacade);
@@ -78,39 +90,6 @@ export const webxrSupported = async (gl: XRGL): Promise<boolean> => {
   try { return await xr.isSessionSupported("immersive-ar") } catch { return false }
 }
 
-/** A pose as a column-major 4×4 world matrix. */
-const compose = ({ position: p, rotation: q }: Pose): number[] => {
-  const { x, y, z, w } = q
-  return [
-    1 - 2 * (y * y + z * z), 2 * (x * y + w * z), 2 * (x * z - w * y), 0,
-    2 * (x * y - w * z), 1 - 2 * (x * x + z * z), 2 * (y * z + w * x), 0,
-    2 * (x * z + w * y), 2 * (y * z - w * x), 1 - 2 * (x * x + y * y), 0,
-    p.x, p.y, p.z, 1,
-  ]
-}
-
-/** The inverse of a column-major 4×4 matrix; null when it has none. */
-const invert = (m: ArrayLike<number>): number[] | null => {
-  const [a00, a01, a02, a03, a10, a11, a12, a13, a20, a21, a22, a23, a30, a31, a32, a33] = Array.from(m)
-  const b00 = a00 * a11 - a01 * a10, b01 = a00 * a12 - a02 * a10, b02 = a00 * a13 - a03 * a10
-  const b03 = a01 * a12 - a02 * a11, b04 = a01 * a13 - a03 * a11, b05 = a02 * a13 - a03 * a12
-  const b06 = a20 * a31 - a21 * a30, b07 = a20 * a32 - a22 * a30, b08 = a20 * a33 - a23 * a30
-  const b09 = a21 * a32 - a22 * a31, b10 = a21 * a33 - a23 * a31, b11 = a22 * a33 - a23 * a32
-  const det = b00 * b11 - b01 * b10 + b02 * b09 + b03 * b08 - b04 * b07 + b05 * b06
-  if (!det) return null
-  const d = 1 / det
-  return [
-    (a11 * b11 - a12 * b10 + a13 * b09) * d, (a02 * b10 - a01 * b11 - a03 * b09) * d,
-    (a31 * b05 - a32 * b04 + a33 * b03) * d, (a22 * b04 - a21 * b05 - a23 * b03) * d,
-    (a12 * b08 - a10 * b11 - a13 * b07) * d, (a00 * b11 - a02 * b08 + a03 * b07) * d,
-    (a32 * b02 - a30 * b05 - a33 * b01) * d, (a20 * b05 - a22 * b02 + a23 * b01) * d,
-    (a10 * b10 - a11 * b08 + a13 * b06) * d, (a01 * b08 - a00 * b10 - a03 * b06) * d,
-    (a30 * b04 - a31 * b02 + a33 * b00) * d, (a21 * b02 - a20 * b04 - a23 * b00) * d,
-    (a11 * b07 - a10 * b09 - a12 * b06) * d, (a00 * b09 - a01 * b07 + a02 * b06) * d,
-    (a31 * b01 - a30 * b03 - a32 * b00) * d, (a20 * b03 - a21 * b01 + a22 * b00) * d,
-  ]
-}
-
 /** A point of clip space (x, y, z, 1) taken back through an inverse projection. */
 const unproject = (inv: number[], x: number, y: number, z: number): [number, number, number] => {
   const w = inv[3]! * x + inv[7]! * y + inv[11]! * z + inv[15]!
@@ -122,11 +101,16 @@ const unproject = (inv: number[], x: number, y: number, z: number): [number, num
 }
 
 type HitWait = { source: XRHitTestSource, frames: number, resolve: (hits: HitResult[]) => void, reject: (e: ARError) => void }
-type AnchorWait = { entity: number, pose: Pose, resolve: () => void, reject: (e: ARError) => void }
+/** An anchor asked for, made in the next frame (createAnchor needs an XRFrame) — the app's
+ *  `anchor()` or a QR code's (./qrAnchor.ts). `wanted()` is asked again once it is made (one no
+ *  longer wanted is deleted at once); `settle` gets it, or null when none was made (`ended`: the
+ *  session went meanwhile). */
+export type AnchorWait = { pose: Pose, wanted(): boolean, settle(anchor: XRAnchor | null, ended: boolean): void }
 type Anchored = { anchor: XRAnchor, tracked: boolean, seen: boolean }
 
-/** The WebXR arm of one session (`registerAR`'s make). */
-export const createWebXRArm = (gl: XRGL, params: ARParams, events: AREvents): ARPlugin => {
+/** The WebXR arm of one session (`registerAR`'s make). `resources`: the manifest's (the QR
+ *  detector's wasm), asked for with the first code. */
+export const createWebXRArm = (gl: XRGL, params: ARParams, events: AREvents, resources?: () => Promise<ARWebResources>): ARPlugin => {
   const scene = params.scene
   let generation = 0
   let running = false
@@ -155,6 +139,16 @@ export const createWebXRArm = (gl: XRGL, params: ARParams, events: AREvents): AR
   /** The latest anchor() of each entity whose XRAnchor is not made yet. */
   const pinned = new Map<number, AnchorWait>()
   const anchors = new Map<number, Anchored>()
+  /** The session's QR targets (`StartOptions.codes`, then each `setCodes`): found in the camera's
+   *  picture, pinned by the session's anchors. */
+  const codes = createQRTracker({
+    setMatrix: (entity, m) => gl.setMatrix(entity, m),
+    image: (payload) => events.image(payload),
+    capture: (maxWidth) => presentation ? presentation.captureCamera({ gray: true, maxWidth }) : Promise.resolve(null),
+    anchor: (wait) => { anchorsDue.push(wait) },
+    anchors: () => features.has("anchors"),
+    wasmUrl: async () => (await resources?.())?.qrAnchorWasm,
+  })
 
   const refuseSelect = (ev: Event) => ev.preventDefault()
 
@@ -187,11 +181,11 @@ export const createWebXRArm = (gl: XRGL, params: ARParams, events: AREvents): AR
     return out.sort((a, b) => a.distance - b.distance)
   }
 
-  /** An anchor() served in a frame: the session's anchor at the pose (in `local`). Released or
-   *  replaced before it is made, it is not wanted; one the session refuses leaves the node where
-   *  setMatrix put it. */
+  /** An anchor asked for, served in a frame: the session's anchor at the pose (in `local`). One no
+   *  longer wanted (an app's released or replaced, a code's set aside) is not made, or deleted once
+   *  made; one the session refuses leaves its node where setMatrix put it. */
   const anchorAt = (frame: XRFrame, wait: AnchorWait) => {
-    if (pinned.get(wait.entity) !== wait) { wait.resolve(); return }
+    if (!wait.wanted()) { wait.settle(null, false); return }
     const mine = generation
     const { position: p, rotation: q } = wait.pose
     let made: Promise<XRAnchor> | undefined
@@ -200,26 +194,17 @@ export const createWebXRArm = (gl: XRGL, params: ARParams, events: AREvents): AR
     } catch (e) {
       made = Promise.reject(e)
     }
-    if (!made) {   // where setMatrix put it: the world holds it
-      pinned.delete(wait.entity)
-      wait.resolve()
-      return
-    }
+    if (!made) { wait.settle(null, false); return }   // where setMatrix put it: the world holds it
     made.then((anchor) => {
-      if (mine !== generation || pinned.get(wait.entity) !== wait) {
+      if (mine !== generation || !wait.wanted()) {
         anchor.delete()
-        if (mine !== generation) wait.reject(new ARError("notRunning"))
-        else wait.resolve()
+        wait.settle(null, mine !== generation)
         return
       }
-      pinned.delete(wait.entity)
-      anchors.set(wait.entity, { anchor, tracked: true, seen: false })
-      wait.resolve()
+      wait.settle(anchor, false)
     }, (e: unknown) => {
       warnOnce("anchor", `the session made no anchor (${e instanceof Error ? e.message : e}): an anchored node stays where it was put`)
-      if (pinned.get(wait.entity) === wait) pinned.delete(wait.entity)
-      if (mine !== generation) wait.reject(new ARError("notRunning"))
-      else wait.resolve()
+      wait.settle(null, mine !== generation)
     })
   }
 
@@ -259,6 +244,7 @@ export const createWebXRArm = (gl: XRGL, params: ARParams, events: AREvents): AR
         events.anchor({ entity, tracked: now })
       }
     }
+    codes.frame(frame, local, pose)
     if (anchorsDue.length) {
       const due = anchorsDue
       anchorsDue = []
@@ -297,13 +283,15 @@ export const createWebXRArm = (gl: XRGL, params: ARParams, events: AREvents): AR
       h.reject(new ARError("notRunning"))
     }
     hits = []
-    for (const wait of anchorsDue) wait.reject(new ARError("notRunning"))
+    const due = anchorsDue
     anchorsDue = []
+    for (const wait of due) wait.settle(null, true)
     pinned.clear()
     for (const a of anchors.values()) {
       try { a.anchor.delete() } catch { /* the session's gone */ }
     }
     anchors.clear()
+    codes.clear()
     local = null
     viewer = null
     features = new Set()
@@ -338,6 +326,7 @@ export const createWebXRArm = (gl: XRGL, params: ARParams, events: AREvents): AR
       if (options?.worldAlignment === "gravityAndHeading") warnOnce("heading", "WebXR has no compass: the world is aligned with gravity alone, −Z where the session began")
       starting = true
       const mine = ++generation
+      codes.setCodes(options?.codes ?? [])
       let s: XRSession
       try {
         // first: inside the tap that opened the scene
@@ -400,6 +389,12 @@ export const createWebXRArm = (gl: XRGL, params: ARParams, events: AREvents): AR
       if (images.length) console.warn("[ar] the web finds no images in the camera's picture: their anchors are never tracked")
     },
 
+    // the set replaces the session's: a code no longer in it lets its anchor go, a new one is looked for
+    setCodes(set: QRTarget[]) {
+      if (!running) throw new ARError("notRunning")
+      codes.setCodes(set)
+    },
+
     async hitTest(x: number, y: number, target?: HitTarget): Promise<HitResult[]> {
       const s = session
       if (!running || !s || !viewer || scene === undefined) throw new ARError("notRunning")
@@ -453,7 +448,17 @@ export const createWebXRArm = (gl: XRGL, params: ARParams, events: AREvents): AR
         try { old.anchor.delete() } catch { /* gone */ }
       }
       return new Promise<void>((resolve, reject) => {
-        const wait: AnchorWait = { entity, pose, resolve, reject }
+        const wait: AnchorWait = {
+          pose,
+          // released or replaced meanwhile: not wanted
+          wanted: () => pinned.get(entity) === wait,
+          settle: (anchor, ended) => {
+            if (pinned.get(entity) === wait) pinned.delete(entity)
+            if (anchor) anchors.set(entity, { anchor, tracked: true, seen: false })
+            if (ended) reject(new ARError("notRunning"))
+            else resolve()
+          },
+        }
         pinned.set(entity, wait)
         anchorsDue.push(wait)
       })

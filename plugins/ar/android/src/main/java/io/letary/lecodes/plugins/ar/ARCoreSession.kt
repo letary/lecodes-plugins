@@ -196,6 +196,13 @@ class ARCoreSession(
         }
     }
 
+    // QR targets (contract version 2) are the web's first: this half tracks none yet
+    override fun setCodes(codes: List<QRTarget>, reply: Reply<Unit, ARCode>) {
+        if (session == null) return reply.reject(ARCode.NOT_RUNNING)
+        Log.w(TAG, "[ar] QR targets are not tracked on this platform yet")
+        reply.reject(ARCode.FAILED)
+    }
+
     override fun hitTest(x: Double, y: Double, target: HitTarget?, reply: Reply<List<HitResult>, ARCode>) {
         val frame = latest ?: return reply.reject(ARCode.NOT_RUNNING)
         if (mode != ARMode.WORLD) return reply.resolve(emptyList())
@@ -300,6 +307,7 @@ class ARCoreSession(
         if (options?.worldAlignment == WorldAlignment.GRAVITY_AND_HEADING) {
             Log.w(TAG, "[ar] worldAlignment \"gravityAndHeading\": ARCore aligns by gravity only")
         }
+        if (options?.codes.orEmpty().isNotEmpty()) Log.w(TAG, "[ar] QR targets are not tracked on this platform yet")
         val targets = options?.images.orEmpty()
         if (targets.isNotEmpty()) {
             val database = AugmentedImageDatabase(s)

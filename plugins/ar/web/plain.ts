@@ -4,8 +4,8 @@
 // `deviceorientation` where there is no gyroscope). The device is a point that looks around: where it
 // is is never known, so the camera stays at the world's origin and the world turns about the viewer;
 // the heading the session begins with is −Z, as ARKit's and ARCore's. Nothing is found in the
-// picture: no plane, no image, no light comes, `hitTest` answers [], `anchor` / `release` /
-// `setImages` hold what is already true (the world's origin never moves).
+// picture: no plane, no image, no QR code, no light comes, `hitTest` answers [], `anchor` / `release` /
+// `setImages` / `setCodes` hold what is already true (the world's origin never moves).
 //
 // The picture is fitted to the scene's view — `host.gl.viewport(scene)`: the canvas the scene draws on
 // (CSS px) and the display's turn — read every frame: a player inside a device frame is smaller than
@@ -21,7 +21,7 @@
 // The channel is the contract's (../contract.d.ts): ar.gen.ts is generated from it, this file
 // implements its ARPlugin for one session, driving the scene through the host's gl facade alone.
 
-import { ARError, type ARParams, type AREvents, type ARPlugin, type HitResult, type ImageTarget, type PluginFile, type PluginGL, type StartOptions } from "./ar.gen"
+import { ARError, type ARParams, type AREvents, type ARPlugin, type HitResult, type ImageTarget, type PluginFile, type PluginGL, type QRTarget, type StartOptions } from "./ar.gen"
 import { Mahony, cameraTurn, coverUV, coveredFov, fromAngles, headingZero, matrixOf, multiply, perspective, upOf, type Quat } from "./orientation"
 
 /** The angle of view along the longer side of a phone's main camera, degrees: a browser does not say
@@ -179,6 +179,7 @@ export const createPlainArm = (gl: PluginGL, params: ARParams, events: AREvents)
         throw new ARError("failed")
       }
       if (options?.mode === "images" || options?.images?.length) console.warn("[ar] the web finds no images in the camera's picture: their anchors are never tracked")
+      if (options?.codes?.length) console.warn("[ar] the web finds no codes in the camera's picture yet: their anchors are never tracked")
       starting = true
       const mine = ++generation
       // the sensors are asked for FIRST: inside the tap that opened the scene, where there was one
@@ -223,6 +224,12 @@ export const createPlainArm = (gl: PluginGL, params: ARParams, events: AREvents)
     setImages(images: ImageTarget[]) {
       if (!running) throw new ARError("notRunning")
       if (images.length) console.warn("[ar] the web finds no images in the camera's picture: their anchors are never tracked")
+    },
+
+    // likewise a set of QR codes: none is found in the picture yet
+    setCodes(codes: QRTarget[]) {
+      if (!running) throw new ARError("notRunning")
+      if (codes.length) console.warn("[ar] the web finds no codes in the camera's picture yet: their anchors are never tracked")
     },
 
     hitTest(): HitResult[] {

@@ -103,6 +103,7 @@ final class ARKitSession: NSObject, ARPlugin, ARSessionDelegate {
         }
 
         let targets = referenceImages(options?.images ?? [])
+        if !(options?.codes ?? []).isEmpty { print("[ar] QR targets are not tracked on this platform yet") }
         let configuration: ARConfiguration
         if mode == .images {
             let c = ARImageTrackingConfiguration()
@@ -158,6 +159,13 @@ final class ARKitSession: NSObject, ARPlugin, ARSessionDelegate {
         // no reset options: the tracking, the planes and the anchors stay
         session.run(configuration)
         reply.resolve()
+    }
+
+    // QR targets (contract version 2) are the web's first: this half tracks none yet
+    func setCodes(_ codes: [QRTarget], _ reply: Reply<Void, ARCode>) {
+        guard session != nil else { return reply.reject(.notRunning) }
+        print("[ar] QR targets are not tracked on this platform yet")
+        reply.reject(.failed)
     }
 
     func hitTest(_ x: Double, _ y: Double, _ target: HitTarget?, _ reply: Reply<[HitResult], ARCode>) {

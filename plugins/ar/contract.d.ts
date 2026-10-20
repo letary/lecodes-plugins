@@ -3,6 +3,10 @@
 // camera and background the session drives every frame through the host's gl facade.
 // A session is ONE AR scene: ARScene opens it with the scene and its camera entity as params and
 // closes it with the scene. `@permission camera` on start: the host asks, the halves never do.
+// What a session finds in the camera's picture and drives an entity to: an image target (a printed
+// picture, by its bytes) and, since contract version 2, a QR code (a printed symbol, by its text) —
+// both through the `image` event. Codes are the web's (WebXR) first: the native halves take them and
+// say they track none yet.
 import type { Service, File, Entity, Scene3D, f64 } from "lecodes-sdk/plugin"
 
 export type ARMode = "world" | "images"
@@ -29,6 +33,19 @@ export interface ImageTarget {
   entity: Entity
 }
 
+/** A printed QR code the session tracks: found by its text in the camera's picture; while
+ *  tracked its entity is driven like an image target's — a rigid pose in metres, no scale — the
+ *  symbol's centre, Y out of it, X along its top edge, Z towards its bottom. Web (WebXR) first;
+ *  the native halves later. */
+export interface QRTarget {
+  /** The code's text: a symbol with another text is not this target. */
+  text: string
+  /** The printed side of the symbol (its modules, no quiet zone), metres. */
+  size: f64
+  /** The entity that follows the code (its Anchor node). */
+  entity: Entity
+}
+
 export interface StartOptions {
   /** Default "world". "images": image tracking only (no planes, no hit test; iOS runs
    *  ARImageTrackingConfiguration, which is lighter). */
@@ -36,6 +53,9 @@ export interface StartOptions {
   /** Default "horizontal". Ignored in "images". */
   planes?: PlaneDetection
   images?: ImageTarget[]
+  /** The QR codes to track (in "world" and in "images"); a half without them says so and drives
+   *  none. @since 2 */
+  codes?: QRTarget[]
   /** Default "gravity". "gravityAndHeading": -Z points north (the compass). */
   worldAlignment?: WorldAlignment
   /** Deliver `light` events. Default false. */
@@ -74,7 +94,8 @@ export interface AREvents {
   /** An image target found, lost, or its size refined. While tracked its entity is driven: a rigid
    *  pose in metres, no scale — the image's centre, Y out of it, the image in XZ (X along its width,
    *  Z towards its bottom). `extent` = [width, height] metres, the framework's estimate (sent again
-   *  when it changes by a millimetre, at most 10 per second); the last one when lost. */
+   *  when it changes by a millimetre, at most 10 per second); the last one when lost. A QR target's
+   *  comes the same way (its frame: X along the symbol's top edge), `extent` = [size, size]. */
   image: { entity: Entity, tracked: boolean, extent: f64[] }
   /** An anchor made by `anchor()` lost or regained after a relocalization. */
   anchor: { entity: Entity, tracked: boolean }
@@ -100,6 +121,13 @@ export interface AR extends Service<"ar", ARParams, AREvents> {
    *  `StartOptions.images`.
    *  @rejects notRunning failed */
   setImages(images: ImageTarget[]): Promise<void>
+  /** The twin of `setImages` for QR codes: replace the set of QR targets of a RUNNING session
+   *  without restarting it; a code no longer in the set stops driving its entity (`tracked: false`
+   *  once if it was tracked). Before `start`, the codes are `StartOptions.codes`. A half that tracks
+   *  no codes yet (the native ones) rejects "failed".
+   *  @since 2
+   *  @rejects notRunning failed */
+  setCodes(codes: QRTarget[]): Promise<void>
   /** What is under a point of the scene's view — in its touches' space (a scene touch's `clientX` /
    *  `clientY`: the units of the gl facade's viewport) — nearest first. Empty when nothing is, or on
    *  a host without surfaces (the web).

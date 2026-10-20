@@ -21,7 +21,7 @@ import {
 import { ARBase, supports } from "./ar.gen"
 import { attachControls, type ControlsHandle, type ControlsOptions } from "./controls"
 import type {
-  ARErrorCode, ARMode, HitTarget, ImageTarget, PlaneChange, PlaneDetection, PlaneType, Pose, StartOptions,
+  ARErrorCode, ARMode, HitTarget, ImageTarget, PlaneChange, PlaneDetection, PlaneType, Pose, QRTarget, StartOptions,
   TrackingReason, TrackingState, WorldAlignment,
 } from "../contract"
 
@@ -58,12 +58,12 @@ export type ARError = { code: ARErrorCode, message: string }
 export type ARPlaneEvent = { plane: ARPlane, change: PlaneChange, mergedInto: ARPlane | null }
 
 export type ARSceneOptions = SceneOptions & {
-  /** "world" (default): planes, hit tests, anchors, image targets. "images": image targets only —
-   *  lighter on iOS; no planes, no hit test, no `root`. */
+  /** "world" (default): planes, hit tests, anchors, image and QR targets. "images": image and QR
+   *  targets only — lighter on iOS; no planes, no hit test, no `root`. */
   mode?: ARMode
 }
 
-export type AROpenOptions = PresentOptions & Omit<StartOptions, "mode" | "images"> & {
+export type AROpenOptions = PresentOptions & Omit<StartOptions, "mode" | "images" | "codes"> & {
   /** The scene's ambient (its `environmentIntensity`) follows the estimated light; turns
    *  `lightEstimation` on. */
   followLight?: boolean
@@ -95,9 +95,10 @@ const wirePose = (p: ARPoseLike): Pose => {
 }
 
 /**
- * A node the AR session drives: it follows a place in the room (`scene.anchor(pose)`, `scene.root`)
- * or an image (`scene.createAnchor(image)`). Put content under it. `tracked` says whether the session
- * holds it now; `track` / `untrack` fire when that changes.
+ * A node the AR session drives: it follows a place in the room (`scene.anchor(pose)`, `scene.root`),
+ * an image (`scene.createAnchor(image)`) or a QR code (`scene.createCodeAnchor(text, size)`). Put
+ * content under it. `tracked` says whether the session holds it now; `track` / `untrack` fire when
+ * that changes.
  */
 export class Anchor extends Node {
   /** @internal */
@@ -132,13 +133,16 @@ export class Anchor extends Node {
 }
 
 /**
- * An anchor that follows an image (`scene.createAnchor(image, physicalWidth)`): while tracked it sits on
- * the image — a rigid pose in metres, no scale: its centre, Y out of the image, the image in X (its
- * width) and Z (towards its bottom). How big the image is, is `extent`.
+ * An anchor that follows an image (`scene.createAnchor(image, physicalWidth)`) or a printed QR code
+ * (`scene.createCodeAnchor(text, size)`, `code` its text): while tracked it sits on it — a rigid pose
+ * in metres, no scale: its centre, Y out of it, the image in X (its width; a code's top edge) and Z
+ * (towards its bottom). How big it is, is `extent`.
  */
 export class ImageAnchor extends Anchor {
   /** @internal */
   _extent: [number, number]
+  /** @internal The text of the QR code it follows; null for an image's. */
+  _code: string | null = null
 
   constructor(physicalWidth: number) {
     super()
@@ -147,8 +151,12 @@ export class ImageAnchor extends Anchor {
 
   /** [width, height] in metres, along the anchor's X and Z: the session's estimate of the printed
    *  image, refined while it tracks it. Before the image is first found: [physicalWidth, 0] — the
-   *  height comes with the image's proportions, which the session reads, at the first `track`. */
+   *  height comes with the image's proportions, which the session reads, at the first `track`. A QR
+   *  code's is [size, size] from the start (a code is square). */
   get extent(): [number, number] { return [this._extent[0], this._extent[1]] }
+
+  /** The text of the QR code the anchor follows (`createCodeAnchor`); null for an image's. */
+  get code(): string | null { return this._code }
 }
 
 /** A surface the session found: a floor, a table, a wall. Its node sits at the plane's centre with Y
@@ -263,11 +271,15 @@ export class ARScene extends Scene {
   private _shown: { promise: Promise<void>, resolve: () => void, reject: (error: Error) => void, epoch: number } | null = null
   /** The open's start while it is out (`_begin`). `closed`: close() ended its session meanwhile — the
    *  half refuses a start its close cut short ("failed"), which is the close's doing: the open was
-   *  superseded, not failed. `images`: the image targets changed meanwhile, which the start did not
-   *  carry (it read them when it was sent) — the set goes to the session once it runs. */
-  private _startOut: { session: ARBase, closed: boolean, images: boolean } | null = null
-  /** A `setImages` is due at the end of this turn (`_setImages`). */
-  private _imagesDue = false
+   *  superseded, not failed. `images` / `codes`: the image / QR targets changed meanwhile, which the
+   *  start did not carry (it read them when it was sent) — the set goes to the session once it runs. */
+  private _startOut: { session: ARBase, closed: boolean, images: boolean, codes: boolean } | null = null
+  /** A `setImages` / `setCodes` is due at the end of this turn (`_setTargets`). */
+  private readonly _due = { images: false, codes: false }
+  /** The QR targets (`createCodeAnchor`). */
+  private readonly _codes: { anchor: ImageAnchor, text: string, size: number }[] = []
+  /** This host's half is older than the QR targets: said once. */
+  private _codesWarned = false
   private _options: AROpenOptions = {}
   private _root: Anchor | null = null
   /** The first horizontal plane's pose: where `root` is pinned. */
@@ -333,7 +345,33 @@ export class ARScene extends Scene {
     this.add(anchor)
     const id = (source as unknown as { _h: Handle })._h.id
     this._images.push({ anchor, image: _toFile({ systemId: id, name: "image", size: 0 }), width: physicalWidth, source })
-    this._setImages()
+    this._setTargets("images")
+    return anchor
+  }
+
+  /** An anchor that follows a printed QR code whose text is `text`: the session finds the symbol in
+   *  the camera image and keeps the anchor on it, as on an image — a rigid pose in metres (its centre,
+   *  Y out of the symbol, X along its top edge, Z towards its bottom), `anchor.extent` = [size, size].
+   *  `size` = the printed side of the symbol in metres (its modules, no quiet zone): how far it is
+   *  comes from it. Hidden while not tracked. Before `open()`, or any time: on a running scene the set
+   *  of codes is updated in place. The web finds codes first (WebXR); on a host whose `ar` plugin does
+   *  not track them the anchor is never tracked, and the console says so. */
+  createCodeAnchor(text: string, size: number): ImageAnchor {
+    const anchor = new ImageAnchor(size)
+    anchor._code = text
+    anchor._extent = [size, size]
+    anchor._scene = this
+    anchor._hideUntracked = true
+    anchor.visible = false
+    this.add(anchor)
+    // a half older than the codes (contract version 2) has no setCodes, and its start reads no codes
+    if (ARScene.isSupported && !supports("setCodes")) {
+      if (!this._codesWarned) console.warn('ARScene: this host\'s "ar" plugin tracks no QR codes (it is older than contract version 2) — their anchors are never tracked')
+      this._codesWarned = true
+      return anchor
+    }
+    this._codes.push({ anchor, text, size })
+    this._setTargets("codes")
     return anchor
   }
 
@@ -484,11 +522,16 @@ export class ARScene extends Scene {
     const options: StartOptions = { ...rest, mode: this.mode }
     if (followLight) options.lightEstimation = true
     if (this._images.length) options.images = this._targets()
+    if (this._codes.length) options.codes = this._codeTargets()
     return options
   }
 
   private _targets(): ImageTarget[] {
     return this._images.map(t => ({ image: t.image, physicalWidth: t.width, entity: t.anchor }))
+  }
+
+  private _codeTargets(): QRTarget[] {
+    return this._codes.map(t => ({ text: t.text, size: t.size, entity: t.anchor }))
   }
 
   private async _begin(): Promise<void> {
@@ -524,7 +567,7 @@ export class ARScene extends Scene {
     })
     this._session = session
     this._baseIntensity = this.environmentIntensity
-    const out = { session, closed: false, images: false }
+    const out = { session, closed: false, images: false, codes: false }
     this._startOut = out
     try {
       await session.start(this._startOptions())
@@ -543,8 +586,9 @@ export class ARScene extends Scene {
       throw superseded()
     }
     this._pinAll()
-    // the image targets changed while the start was out: the running session takes the set now
-    if (out.images) this._setImages()
+    // the image / QR targets changed while the start was out: the running session takes the set now
+    if (out.images) this._setTargets("images")
+    if (out.codes) this._setTargets("codes")
   }
 
   /** The session is over (closed, failed): every anchor untracked, the planes gone. */
@@ -569,32 +613,34 @@ export class ARScene extends Scene {
     this._planes.clear()
     for (const anchor of this._pinned) anchor._setTracked(false)
     for (const image of this._images) image.anchor._setTracked(false)
+    for (const code of this._codes) code.anchor._setTracked(false)
     this._root?._setTracked(false)
     if (this._options.followLight) this.environmentIntensity = this._baseIntensity
   }
 
-  /** The image targets changed (one added or removed): a running session takes the whole set in place
-   *  (`setImages` — the tracking, the planes and the anchors stay). Sent at the end of the turn: several
-   *  targets added in a row are one set. While the open's start is out it waits for it (the start
-   *  carried the set it read when it was sent); before a session there is nothing to tell — the start
-   *  carries the set. Nothing waits for it: a set the half refuses is a console line, and an anchor
-   *  whose image the session did not take never tracks. */
-  private _setImages(): void {
+  /** The image targets or the QR targets changed (one added or removed): a running session takes the
+   *  whole set in place (`setImages` / `setCodes` — the tracking, the planes and the anchors stay). Sent
+   *  at the end of the turn: several targets added in a row are one set. While the open's start is out
+   *  it waits for it (the start carried the set it read when it was sent); before a session there is
+   *  nothing to tell — the start carries the set. Nothing waits for it: a set the half refuses is a
+   *  console line, and an anchor whose target the session did not take never tracks. */
+  private _setTargets(kind: "images" | "codes"): void {
     const session = this._session
     if (!session) return
     const out = this._startOut
-    if (out && out.session === session) { out.images = true; return }
-    if (this._imagesDue) return
-    this._imagesDue = true
+    if (out && out.session === session) { out[kind] = true; return }
+    if (this._due[kind]) return
+    this._due[kind] = true
     void Promise.resolve().then(() => {
-      this._imagesDue = false
+      this._due[kind] = false
       // closed meanwhile: a call on the closed channel would open a new session (the next open's start
       // carries the set)
       if (this._session !== session) return
-      session.setImages(this._targets()).catch((e: unknown) => {
+      const sent = kind === "images" ? session.setImages(this._targets()) : session.setCodes(this._codeTargets())
+      sent.catch((e: unknown) => {
         // a close while it was out: the half's refusal is the close's, nothing failed
         if (this._session !== session) return
-        console.warn(`ARScene: the session did not take the image targets (${e instanceof Error ? e.message : String(e)}) — their anchors are not tracked`)
+        console.warn(`ARScene: the session did not take the ${kind === "images" ? "image targets" : "QR codes"} (${e instanceof Error ? e.message : String(e)}) — their anchors are not tracked`)
       })
     })
   }
@@ -641,10 +687,13 @@ export class ARScene extends Scene {
     if (anchor === this._root) this._root = null
     const image = this._images.findIndex(t => t.anchor === anchor)
     if (image >= 0) this._images.splice(image, 1)
+    const code = this._codes.findIndex(t => t.anchor === anchor)
+    if (code >= 0) this._codes.splice(code, 1)
     this._wire("release", s => s.release(anchor)).catch(() => {})
     anchor._setTracked(false)
     this.remove(anchor)
-    if (image >= 0) this._setImages()
+    if (image >= 0) this._setTargets("images")
+    if (code >= 0) this._setTargets("codes")
   }
 
   private _onPlane(p: { change: PlaneChange, id: number, type: PlaneType, pose: Pose, extent: number[], polygon: number[], mergedInto?: number }): void {
