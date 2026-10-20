@@ -14,7 +14,7 @@
 // horizontal plane the session reports, so the halves know no root.
 
 import {
-  Geometry, Mat4, Material, Mesh, Node, Presentable, Quat, Scene, System, Vec3, _ensurePermission, _navEpoch, _toFile,
+  Geometry, Mat4, Material, Mesh, Node, Presentable, Quat, Router, Scene, System, Vec3, _ensurePermission, _navEpoch, _toFile,
   type ClickEvent, type DismissOptions, type FetchResponse, type File, type NodeEvents, type PresentOptions,
   type QuatLike, type SceneOptions, type TouchStartEvent, type Vec3Like,
 } from "lecodes-sdk/plugin"
@@ -75,8 +75,11 @@ export type ARSceneEvents = {
   light: (estimate: ARLightEstimate) => void
   error: (error: ARError) => void
   /** The session ended on its own — the user left it (the back gesture of an immersive web session)
-   *  or the system took it — and the scene closes (back to the previous destination), as if the user
-   *  had pressed back. Not an error. Sent before the close. */
+   *  or the system took it — and the scene leaves: popped when it is the router's top, else closed
+   *  (`onClose` is where an app opens what comes next, as after `scene.close()`). Not an error. Sent
+   *  before the scene leaves. (A `Router.pop()` of an AR scene by the app does NOT end its session:
+   *  a covered scene comes back with it — on the web an immersive session then stays on; `close()`
+   *  ends it.) */
   end: (reason: "user" | "system") => void
 }
 
@@ -572,10 +575,13 @@ export class ARScene extends Scene {
     })
     session.on("ended", p => {
       if (this._session !== session || !p) return
-      // over, not by close(): the scene goes with it — the user's back gesture, as the router's
+      // over, not by close(): the scene goes with it — the user's back gesture, as the router's:
+      // popped when it is the router's top (the page under it shows), else closed (what it replaced
+      // comes back through its onClose — `open()` took that destination's place)
       this._drop(session)
       this._emit("end", p.reason)
-      this.close()
+      if (Router.current === this) Router.pop()
+      else this.close()
     })
     this._session = session
     this._baseIntensity = this.environmentIntensity

@@ -218,7 +218,11 @@ const transformPose = (t: XRRigidTransform): Pose => ({
   rotation: { x: t.orientation.x, y: t.orientation.y, z: t.orientation.z, w: t.orientation.w },
 })
 
+/** The session ended by itself: its anchors are gone with it, none is deleted (a call into an
+ *  ended session has crashed Chrome's renderer — webxr.ts's end). */
+let sessionGone = false
 const deleteAnchor = (anchor: XRAnchor | null) => {
+  if (sessionGone) return
   try { anchor?.delete() } catch { /* the session's gone */ }
 }
 
@@ -663,10 +667,12 @@ export const createQRTracker = (host: QRTrackerHost) => {
       })
     },
 
-    /** The session's end: every code and anchor gone, the worker ended. */
-    clear() {
+    /** The session's end: every code and anchor gone, the worker ended. `dead` = the session
+     *  ended by itself: its anchors go with it, untouched. */
+    clear(dead = false) {
       generation++
-      for (const c of codes) drop(c, false)
+      sessionGone = dead
+      try { for (const c of codes) drop(c, false) } finally { sessionGone = false }
       codes = []
       stopWorker()
       failed = false

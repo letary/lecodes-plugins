@@ -265,7 +265,10 @@ export const createWebXRArm = (gl: XRGL, params: ARParams, events: AREvents, res
     first?.()
   }
 
-  const end = () => {
+  /** `dead`: the session ended by itself — nothing of it is called any more (an anchor's delete, a
+   *  hit-test source's cancel, its end: Chrome's renderer has crashed on such a call after the
+   *  session's end — a null dereference in libchrome, seen on a Xiaomi 11T Pro, Chrome 142). */
+  const end = (dead = false) => {
     generation++
     running = false
     starting = false
@@ -276,12 +279,12 @@ export const createWebXRArm = (gl: XRGL, params: ARParams, events: AREvents, res
     session = null
     if (s) {
       s.removeEventListener("end", onSessionEnd)
-      s.end().catch(() => {})   // (one that ended by itself refuses: nothing to do)
+      if (!dead) s.end().catch(() => {})
       if (scene !== undefined) gl.clearProjection(scene)   // the host's projection of the viewer
     }
     document.body?.removeEventListener("beforexrselect", refuseSelect)
     for (const h of hits) {
-      try { h.source.cancel() } catch { /* the session's gone */ }
+      if (!dead) try { h.source.cancel() } catch { /* the session's gone */ }
       h.reject(new ARError("notRunning"))
     }
     hits = []
@@ -289,11 +292,11 @@ export const createWebXRArm = (gl: XRGL, params: ARParams, events: AREvents, res
     anchorsDue = []
     for (const wait of due) wait.settle(null, true)
     pinned.clear()
-    for (const a of anchors.values()) {
+    if (!dead) for (const a of anchors.values()) {
       try { a.anchor.delete() } catch { /* the session's gone */ }
     }
     anchors.clear()
-    codes.clear()
+    codes.clear(dead)
     local = null
     viewer = null
     features = new Set()
@@ -312,7 +315,7 @@ export const createWebXRArm = (gl: XRGL, params: ARParams, events: AREvents, res
    *  the contract's `ended` — the session is over, not an error. The browser says no reason: "user". */
   const onSessionEnd = () => {
     const wasRunning = running
-    end()
+    end(true)
     if (wasRunning) events.ended({ reason: "user" })
   }
 
