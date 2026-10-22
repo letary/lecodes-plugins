@@ -5,8 +5,8 @@
 // closes it with the scene. `@permission camera` on start: the host asks, the halves never do.
 // What a session finds in the camera's picture and drives an entity to: an image target (a printed
 // picture, by its bytes) and, since contract version 2, a QR code (a printed symbol, by its text) —
-// both through the `image` event. Codes are the web's (WebXR) first: the native halves take them and
-// say they track none yet.
+// both through the `image` event. Codes are qr-anchor's on every platform: its wasm in the WebXR arm,
+// its C ABI on ARKit / ARCore (the plain-camera web arm tracks none and says so).
 import type { Service, File, Entity, Scene3D, f64 } from "lecodes-sdk/plugin"
 
 export type ARMode = "world" | "images"
@@ -35,8 +35,8 @@ export interface ImageTarget {
 
 /** A printed QR code the session tracks: found by its text in the camera's picture; while
  *  tracked its entity is driven like an image target's — a rigid pose in metres, no scale — the
- *  symbol's centre, Y out of it, X along its top edge, Z towards its bottom. Web (WebXR) first;
- *  the native halves later. */
+ *  symbol's centre, Y out of it, X along its top edge, Z towards its bottom. WebXR, ARKit and
+ *  ARCore; a half without a detector (the plain-camera web arm) tracks none. */
 export interface QRTarget {
   /** The code's text: a symbol with another text is not this target. "" = ANY code (the first
    *  one decoded): a test, or a plaque whose text is not known to the app. */
@@ -130,7 +130,7 @@ export interface AR extends Service<"ar", ARParams, AREvents> {
   /** The twin of `setImages` for QR codes: replace the set of QR targets of a RUNNING session
    *  without restarting it; a code no longer in the set stops driving its entity (`tracked: false`
    *  once if it was tracked). Before `start`, the codes are `StartOptions.codes`. A half that tracks
-   *  no codes yet (the native ones) rejects "failed".
+   *  no codes (the plain-camera web arm) rejects "failed".
    *  @since 2
    *  @rejects notRunning failed */
   setCodes(codes: QRTarget[]): Promise<void>

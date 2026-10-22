@@ -44,7 +44,7 @@ export const setImages = (service: ServiceChannel<AREvents>, images: ImageTarget
 /** The twin of `setImages` for QR codes: replace the set of QR targets of a RUNNING session
  *  without restarting it; a code no longer in the set stops driving its entity (`tracked: false`
  *  once if it was tracked). Before `start`, the codes are `StartOptions.codes`. A half that tracks
- *  no codes yet (the native ones) rejects "failed".
+ *  no codes (the plain-camera web arm) rejects "failed".
  *  Contract version 2: an older half rejects the call — ask `supports("setCodes")`.
  *  Rejects with "notRunning" / "failed". */
 export const setCodes = (service: ServiceChannel<AREvents>, codes: QRTarget[]): Promise<void> =>
@@ -107,7 +107,7 @@ export class ARBase extends ServiceChannel<AREvents> {
   /** The twin of `setImages` for QR codes: replace the set of QR targets of a RUNNING session
    *  without restarting it; a code no longer in the set stops driving its entity (`tracked: false`
    *  once if it was tracked). Before `start`, the codes are `StartOptions.codes`. A half that tracks
-   *  no codes yet (the native ones) rejects "failed".
+   *  no codes (the plain-camera web arm) rejects "failed".
    *  Contract version 2: an older half rejects the call — ask `supports("setCodes")`.
    *  Rejects with "notRunning" / "failed". */
   setCodes(codes: QRTarget[]): Promise<void> { return setCodes(this, codes) }

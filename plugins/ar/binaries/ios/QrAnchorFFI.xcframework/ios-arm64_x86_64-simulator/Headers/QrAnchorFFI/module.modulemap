@@ -1,0 +1,4 @@
+module QrAnchorFFI {
+    header "qr_anchor.h"
+    export *
+}

@@ -38,9 +38,10 @@ let package = Package(
         // ar
         .target(
             name: "LeCodesAR",
-            dependencies: [.product(name: "LeCodes", package: "lecodes")],
+            dependencies: [.product(name: "LeCodes", package: "lecodes"), "QrAnchorFFI"],
             path: "plugins/ar/ios"
         ),
+        .binaryTarget(name: "QrAnchorFFI", path: "plugins/ar/binaries/ios/QrAnchorFFI.xcframework"),
         // audio-recorder
         .target(
             name: "LeCodesAudioRecorder",

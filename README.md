@@ -44,13 +44,13 @@ lecodes plugin gen --check    # fail on a stale one (CI)
 ```
 
 `Package.swift` at the root is generated too: the iOS halves as one SwiftPM package — a target and a
-product per plugin (the manifest's `ios.module`, its `ios.packages` as dependencies). Each plugin is
-its own module, so two plugins may name a type alike, and an Xcode project links a plugin as a
-product instead of compiling its folder. The SDK the package depends on is the LeCodes package on
-disk: `LECODES_IOS_SDK_PATH`, else what this repo's `package.json` names under `lecodes.iosSdkPath`
-(`../apple/lecodes`: this repo is a submodule of LeCodes core at `hosts/plugins`), else the sibling
-`../lecodes`. A shell made by
-`lecodes app sync` vendors the sources into its own targets instead.
+product per plugin (the manifest's `ios.module`, its `ios.packages` as dependencies, a binary target
+per `ios.binaries` xcframework). Each plugin is its own module, so two plugins may name a type alike,
+and an Xcode project links a plugin as a product instead of compiling its folder. The SDK the
+package depends on is the LeCodes package on disk: `LECODES_IOS_SDK_PATH`, else what this repo's
+`package.json` names under `lecodes.iosSdkPath` (`../apple/lecodes`: this repo is a submodule of
+LeCodes core at `hosts/plugins`), else the sibling `../lecodes`. A shell made by `lecodes app sync`
+vendors the sources into its own targets instead.
 
 `sdk/<id>.ts` is the hand-written part of the wrapper, and optional: without it the generated file
 exports the public API itself — the wire's methods and a typed `on(event, …)`.
@@ -133,7 +133,11 @@ export interface CameraView extends View<"camera", CameraParams, CameraEvents> {
 - A platform is ALWAYS a key: an object where the plugin has a half, `null` where it has none.
 - `register` is the hand-written type a host calls: `static func register(in:)` on iOS,
   `fun register(engine, context)` on Android, the module that exports `register(host)` on the web.
-- iOS: `infoPlist` (usage strings), `entitlements`, `packages`. Android: `dependencies` (Maven; a
+- iOS: `infoPlist` (usage strings), `entitlements`, `packages`, `binaries` — prebuilt
+  xcframeworks of the plugin's folder by their paths in it (`["binaries/ios/QrAnchorFFI.xcframework"]`),
+  never under `ios/`: each is a binary target named after its folder (`QrAnchorFFI`, one name per
+  package — two plugins may not carry one alike) that the half's target links; a shell copies it
+  beside the vendored sources. Android: `dependencies` (Maven; a
   `platform:` prefix is a BoM), `gradlePlugins`; `<uses-permission>` and services are the half's own
   `AndroidManifest.xml`. Web: `dependencies` (npm), `resources` — what the half asks of its bundler,
   handed to `register` under these names (a function: nothing is fetched before the half asks), so

@@ -87,8 +87,8 @@ public struct ImageTarget {
 
 /// A printed QR code the session tracks: found by its text in the camera's picture; while
 /// tracked its entity is driven like an image target's — a rigid pose in metres, no scale — the
-/// symbol's centre, Y out of it, X along its top edge, Z towards its bottom. Web (WebXR) first;
-/// the native halves later.
+/// symbol's centre, Y out of it, X along its top edge, Z towards its bottom. WebXR, ARKit and
+/// ARCore; a half without a detector (the plain-camera web arm) tracks none.
 public struct QRTarget {
     /// The code's text: a symbol with another text is not this target. "" = ANY code (the first
     /// one decoded): a test, or a plaque whose text is not known to the app.
@@ -506,7 +506,7 @@ public protocol ARPlugin: AnyObject {
     /// The twin of `setImages` for QR codes: replace the set of QR targets of a RUNNING session
     /// without restarting it; a code no longer in the set stops driving its entity (`tracked: false`
     /// once if it was tracked). Before `start`, the codes are `StartOptions.codes`. A half that tracks
-    /// no codes yet (the native ones) rejects "failed".
+    /// no codes (the plain-camera web arm) rejects "failed".
     /// Rejects with .notRunning / .failed.
     func setCodes(_ codes: [QRTarget], _ reply: Reply<Void, ARCode>)
     /// What is under a point of the scene's view — in its touches' space (a scene touch's `clientX` /

@@ -17,6 +17,14 @@
 //  planes and the anchors, and goes on tracking an image still in the set (its reference is the same
 //  object, so ARKit knows it is the same image).
 //
+//  QR targets (`StartOptions.codes`, `setCodes`) are QRTracker.swift's: it copies the luma plane of
+//  the frame's capturedImage, finds the codes in it off the main thread through qr-anchor's C ABI
+//  (the binary target QrAnchorFFI) and keeps each found code in the room by an ARAnchor of its own
+//  (`lecodes-qr-<entity>`; none in "images" mode, where the entity is put at each observation). Those
+//  anchors are the tracker's: `pinned` / `anchorOf`, `release` and the relocalization's `anchor`
+//  events are the app's anchors' only. The session hands it the codes, each frame (after the
+//  camera), the anchors ARKit removed and the end.
+//
 //  The viewport is the scene view's (`gl.viewport(scene)`: its size in points, the display's turn),
 //  read every frame: a shell may show the scene in less than the window, and a turn or a resize
 //  re-makes the projection and the background's crop that frame. Before the scene is presented its
@@ -65,6 +73,8 @@ final class ARKitSession: NSObject, ARPlugin, ARSessionDelegate {
     /// The anchors `anchor()` made, both ways.
     private var pinned: [UUID: Entity] = [:]
     private var anchorOf: [UInt32: ARAnchor] = [:]
+    /// The session's QR targets and their anchors (QRTracker.swift).
+    private var tracker: QRTracker?
 
     private struct PlaneSent { let id: Double; var type: PlaneType; var pose: Pose; var center: simd_float3; var extent: simd_float2; var at: TimeInterval }
     private var planes: [UUID: PlaneSent] = [:]
@@ -103,7 +113,6 @@ final class ARKitSession: NSObject, ARPlugin, ARSessionDelegate {
         }
 
         let targets = referenceImages(options?.images ?? [])
-        if !(options?.codes ?? []).isEmpty { print("[ar] QR targets are not tracked on this platform yet") }
         let configuration: ARConfiguration
         if mode == .images {
             let c = ARImageTrackingConfiguration()
@@ -128,6 +137,9 @@ final class ARKitSession: NSObject, ARPlugin, ARSessionDelegate {
         self.configuration = configuration
         self.mode = mode
         self.texture = texture
+        let tracker = QRTracker(session: session, anchors: mode == .world, gl: gl, events: events)
+        self.tracker = tracker
+        tracker.set(options?.codes ?? [])
         starting = reply
         cancelFrame = gl.onFrame { [weak self] in self?.frame() }
         session.run(configuration)
@@ -161,11 +173,11 @@ final class ARKitSession: NSObject, ARPlugin, ARSessionDelegate {
         reply.resolve()
     }
 
-    // QR targets (contract version 2) are the web's first: this half tracks none yet
+    // the set replaces the session's: a code no longer in it lets its anchor go, a new one is looked for
     func setCodes(_ codes: [QRTarget], _ reply: Reply<Void, ARCode>) {
-        guard session != nil else { return reply.reject(.notRunning) }
-        print("[ar] QR targets are not tracked on this platform yet")
-        reply.reject(.failed)
+        guard session != nil, let tracker else { return reply.reject(.notRunning) }
+        tracker.set(codes)
+        reply.resolve()
     }
 
     func hitTest(_ x: Double, _ y: Double, _ target: HitTarget?, _ reply: Reply<[HitResult], ARCode>) {
@@ -258,6 +270,8 @@ final class ARKitSession: NSObject, ARPlugin, ARSessionDelegate {
                 gl.setMatrix(entity, anchor.transform)
             }
         }
+        // the QR codes: the last picture's result, their anchors, the next picture
+        tracker?.frame(frame)
         if let estimate = frame.lightEstimate, frame.timestamp - lightAt >= 0.1 {
             lightAt = frame.timestamp
             events.light(intensity: Double(estimate.ambientIntensity), temperature: Double(estimate.ambientColorTemperature))
@@ -325,6 +339,9 @@ final class ARKitSession: NSObject, ARPlugin, ARSessionDelegate {
                 // ARKit dropped an anchor of ours (a world map that no longer holds it): lost for good
                 anchorOf[entity.id] = nil
                 events.anchor(entity: entity, tracked: false)
+            } else {
+                // a QR code's (the tracker ignores one it removed itself): lost, sought again
+                tracker?.removed(anchor)
             }
         }
     }
@@ -418,6 +435,8 @@ final class ARKitSession: NSObject, ARPlugin, ARSessionDelegate {
     private func end() {
         cancelFrame?()
         cancelFrame = nil
+        tracker?.clear()
+        tracker = nil
         session?.delegate = nil
         session?.pause()
         session = nil

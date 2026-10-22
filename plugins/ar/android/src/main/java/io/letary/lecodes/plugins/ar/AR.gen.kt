@@ -100,8 +100,8 @@ data class ImageTarget(
 /**
  * A printed QR code the session tracks: found by its text in the camera's picture; while
  * tracked its entity is driven like an image target's — a rigid pose in metres, no scale — the
- * symbol's centre, Y out of it, X along its top edge, Z towards its bottom. Web (WebXR) first;
- * the native halves later.
+ * symbol's centre, Y out of it, X along its top edge, Z towards its bottom. WebXR, ARKit and
+ * ARCore; a half without a detector (the plain-camera web arm) tracks none.
  */
 data class QRTarget(
     /**
@@ -516,7 +516,7 @@ interface ARPlugin {
      * The twin of `setImages` for QR codes: replace the set of QR targets of a RUNNING session
      * without restarting it; a code no longer in the set stops driving its entity (`tracked: false`
      * once if it was tracked). Before `start`, the codes are `StartOptions.codes`. A half that tracks
-     * no codes yet (the native ones) rejects "failed".
+     * no codes (the plain-camera web arm) rejects "failed".
      * Rejects with NOT_RUNNING / FAILED.
      */
     fun setCodes(codes: List<QRTarget>, reply: Reply<Unit, ARCode>)

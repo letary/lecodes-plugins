@@ -26,11 +26,20 @@
 //  (the tracking, the planes and the anchors stay). ARCore stops every image of the database it lets
 //  go, one still in the set too: that one is found again as the new database's.
 //
+//  QR targets (`StartOptions.codes` / `setCodes`, contract version 2) are QRTracker.kt's: the port of
+//  the WebXR arm's tracker over qr-anchor's JNI face (io.letary.qranchor.QrAnchor). Each frame it reads
+//  the frame's CPU image (plane 0, the luma) with `camera.pose` — the sensor's, not the display's — and
+//  `camera.imageIntrinsics`, hands it to the detector on its own thread and, a frame or two later, puts
+//  a code's entity where it was found and pins it there with an anchor of the session. Those anchors
+//  are the tracker's own: `anchors` below is the app's `anchor()` alone, `release()` never touches a
+//  code's. `setCodes` gives a running session another set at once (a code dropped says `tracked: false`
+//  once if it was tracked); the session's end frees the detector.
+//
 //  Before the first session ARCore may need installing: `start` asks Google Play Services for AR
 //  (`requestInstall`), which shows the Play Store's dialog and resumes the activity; the start goes on
 //  at that resume. The channel is AR.gen.kt, generated from contract.d.ts; `start` arrives with the
 //  camera permission granted. Main thread throughout (the GL thread is the main thread here), but for
-//  the captures' encode and the image databases' build.
+//  the captures' encode, the image databases' build and the QR detector.
 //
 
 package io.letary.lecodes.plugins.ar
@@ -136,6 +145,8 @@ class ARCoreSession(
     private var imagesBuilt: Pair<AugmentedImageDatabase, Map<String, Entity>>? = null
     private var imagesBuilding = 0
     private val anchors = HashMap<Int, Pair<Entity, Anchor>>()
+    /** The QR targets, their detector and their anchors (none of them in `anchors`). */
+    private val qr = QRTracker(gl, events)
 
     private class PlaneSent(val id: Double, val type: PlaneType, val pose: Pose, val cx: Float, val cy: Float, val cz: Float, val ex: Float, val ez: Float, val at: Long)
     private val planes = HashMap<Plane, PlaneSent>()
@@ -196,11 +207,12 @@ class ARCoreSession(
         }
     }
 
-    // QR targets (contract version 2) are the web's first: this half tracks none yet
+    /** Another set of QR targets for the running session, taken at once (QRTracker.set): the next
+     *  frame seeks a new code, a dropped one's anchor is gone. */
     override fun setCodes(codes: List<QRTarget>, reply: Reply<Unit, ARCode>) {
         if (session == null) return reply.reject(ARCode.NOT_RUNNING)
-        Log.w(TAG, "[ar] QR targets are not tracked on this platform yet")
-        reply.reject(ARCode.FAILED)
+        qr.set(codes)
+        reply.resolve()
     }
 
     override fun hitTest(x: Double, y: Double, target: HitTarget?, reply: Reply<List<HitResult>, ARCode>) {
@@ -307,7 +319,6 @@ class ARCoreSession(
         if (options?.worldAlignment == WorldAlignment.GRAVITY_AND_HEADING) {
             Log.w(TAG, "[ar] worldAlignment \"gravityAndHeading\": ARCore aligns by gravity only")
         }
-        if (options?.codes.orEmpty().isNotEmpty()) Log.w(TAG, "[ar] QR targets are not tracked on this platform yet")
         val targets = options?.images.orEmpty()
         if (targets.isNotEmpty()) {
             val database = AugmentedImageDatabase(s)
@@ -331,6 +342,7 @@ class ARCoreSession(
         session = s
         this.config = config
         resumed = true
+        qr.set(options?.codes.orEmpty())
         cancelFrame = gl.onFrame { frame() }
     }
 
@@ -394,6 +406,8 @@ class ARCoreSession(
             anchor.pose.toMatrix(m, 0)
             gl.setMatrix(entity, m)
         }
+        // the QR targets: the detector's results, their anchors, this frame's capture when one is due
+        qr.frame(s, frame)
         frame.lightEstimate.takeIf { it.state == LightEstimate.State.VALID }?.let { light(it) }
     }
 
@@ -718,6 +732,7 @@ class ARCoreSession(
         installRequested = false
         for ((_, anchor) in anchors.values) anchor.detach()
         anchors.clear()
+        qr.clear()
         session?.let { s ->
             s.pause()
             // an image database still building on the worker uses the session: it is closed after the
