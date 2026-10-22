@@ -6,6 +6,9 @@
 //   const back = await Browser.open(checkoutUrl, { returnUrl: [paid, failed], embedded: true })
 //                                                                  a checkout in an embedded page,
 //                                                                  resolved with the URL it reached
+//                                                                  (navigated to in the page, or
+//                                                                  opened by a bank's app through
+//                                                                  the app's verified link)
 //
 // It resolves with the return URL reached, or null when the user left. `returnUrl` says what ENDS
 // the page; `embedded` says WHERE it runs — the system sheet (shared logins, passkeys, Apple Pay;
@@ -36,7 +39,8 @@ export interface BrowserOpenOptions {
   /** What ends the page: a URL prefix, or several (a checkout's success and failure URLs). The
    *  promise resolves with the URL reached. In the sheet every prefix must share one scheme — the
    *  platform intercepts one; a custom scheme needs app.json `urlScheme`, an https one the app's
-   *  verified links. */
+   *  verified links (app.json `appLinks`). Embedded, the view intercepts the navigation itself,
+   *  and a verified https return from another app (a bank's) ends the page too. */
   returnUrl?: string | string[]
   /** Run the page in an embedded WebView under a close bar instead of the system sheet. The
    *  WebView intercepts any return URL itself, https included. */
@@ -155,10 +159,16 @@ const openEmbedded = (url: string, options: BrowserOpenOptions): Promise<string 
     if (routed) Router.pop()
     else { screen.close(); previous?.open() }
   }
+  // Two ways the return URL arrives: the page navigates to it inside the view (`stop`), or
+  // another app does — a bank's app the checkout handed off to sends the person back through the
+  // app's verified link (app.json "appLinks"), which reaches the app as its "url" event while the
+  // page still shows the bank's form. Both end the flow; `done` makes the second a no-op.
   let done = false
+  const off = stops.length ? _onAppUrl(back => { if (matching(back, stops)) finish(back) }) : () => {}
   const finish = (back: string | null): void => {
     if (done) return
     done = true
+    off()
     leave()
     resolve(back)
   }
