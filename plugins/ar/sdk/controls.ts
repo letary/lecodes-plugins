@@ -1,20 +1,21 @@
 // AR object-placement controls — the classic "drop a model in the room and manipulate it" gesture
-// recipe: ONE finger drags the target over what the session finds under the finger (`hitTest`: a
-// plane), and where it finds nothing — the web, which finds no surfaces, or before one is known —
-// across the ground plane, relative to where the camera looks; TWO fingers pinch to scale and twist
-// to rotate (yaw). Lives on ARScene (`scene.addControls`) because it orchestrates the scene's camera,
-// its hit test and touch input against a target node; it's built entirely on the public API, so
-// it's a convenience, not a primitive.
+// recipe: ONE finger drags the target across the ground plane at its own height, by the finger's
+// move and relative to where the camera looks — the model never jumps to the finger, and no session
+// call is in the loop, so it behaves the same on every host (the web too). Not under the finger on
+// purpose: the finger's ray onto the floor (a hit test, or the plane at the target's height) is
+// metres per point near the horizon, and there the target flies off at the slightest move. TWO
+// fingers pinch to scale and twist to rotate (yaw). Lives on ARScene (`scene.addControls`) because it
+// orchestrates the scene's camera and touch input against a target node; it's built entirely on the
+// public API, so it's a convenience, not a primitive.
 
 import { Quat, Vec2, Vec3, type Node, type Scene, type TouchStartEvent } from "lecodes-sdk/plugin"
-import type { HitTarget } from "../contract"
 
 export type ControlsOptions = {
   /** Smallest uniform scale the pinch gesture allows (default 0.08). */
   minScale?: number
   /** Largest uniform scale the pinch gesture allows (default 2). */
   maxScale?: number
-  /** One-finger drag moves the target over the surfaces under the finger (default true). */
+  /** One-finger drag moves the target across the ground plane, at its height (default true). */
   pan?: boolean
   /** Two-finger pinch scales the target (default true). */
   pinch?: boolean
@@ -25,16 +26,11 @@ export type ControlsOptions = {
 /** Returned by `addControls` — call `remove()` to detach the gesture listeners. */
 export type ControlsHandle = { remove(): void }
 
-/** The scene the controls work on: ARScene's hit test, a Scene's camera and touches. */
-type PlacingScene = Scene & {
-  hitTest(x: number, y: number, target?: HitTarget): Promise<{ pose: { position: Vec3 } }[]>
-}
-
 type ActiveTouch = { pointerId: number, x: number, y: number }
 
 const clamp = (v: number, lo: number, hi: number): number => (v < lo ? lo : v > hi ? hi : v)
 
-export const attachControls = (scene: PlacingScene, target: Node, options: ControlsOptions = {}): ControlsHandle => {
+export const attachControls = (scene: Scene, target: Node, options: ControlsOptions = {}): ControlsHandle => {
   const minScale = options.minScale ?? 0.08
   const maxScale = options.maxScale ?? 2
   const pan = options.pan ?? true
@@ -42,60 +38,6 @@ export const attachControls = (scene: PlacingScene, target: Node, options: Contr
   const twist = options.twist ?? true
 
   const active: ActiveTouch[] = []
-  let removed = false
-
-  // --- one finger: the hit test is a call to the session, so ONE is in flight at a time; the moves
-  // that come meanwhile add up and go with the next ---
-  let pending: { x: number, y: number, dx: number, dy: number } | null = null
-  let asking = false
-
-  /** The target onto a point of the world, its height and turn kept by the surface's. */
-  const placeAt = (world: Vec3): void => {
-    const w = target.worldMatrix.toArray()
-    w[12] = world.x; w[13] = world.y; w[14] = world.z
-    target.worldMatrix = w
-  }
-
-  /** Nothing under the finger: across the ground plane, relative to where the camera looks. */
-  const slide = (dx: number, dy: number): void => {
-    let dir = scene.camera.forward
-    const parent = target.parent
-    if (parent) dir = dir.rotate(parent.quaternion.invert()) // into the parent's local frame
-    dir = dir.withY(0)
-    const k = Math.hypot(dir.x, dir.z)
-    // the move's delta over the view's size: both logical units (a scene touch's, displaySize's), so
-    // a drag across the view slides the target by its distance from the camera on every host
-    const screen = Math.max(...scene.camera.displaySize)
-    if (k > 1e-4 && screen > 0) {
-      const dist = target.worldPosition.distanceTo(scene.camera.worldPosition)
-      const right = new Vec3(-dir.z, 0, dir.x).scale(dx / k / screen * dist)
-      const fwd = dir.scale(-dy / k / screen * dist)
-      const move = right.add(fwd)
-      const p = target.position
-      target.position = new Vec3(p.x + move.x, p.y, p.z + move.z) // keep height fixed
-    }
-  }
-
-  const ask = (): void => {
-    const drag = pending
-    if (!drag || asking) return
-    pending = null
-    asking = true
-    scene.hitTest(drag.x, drag.y, "planes").catch(() => []).then((hits) => {
-      asking = false
-      if (removed) return
-      const hit = hits[0]
-      if (hit) placeAt(hit.pose.position)
-      else slide(drag.dx, drag.dy)
-      ask()
-    })
-  }
-
-  const drag = (x: number, y: number, dx: number, dy: number): void => {
-    if (pending) { pending.x = x; pending.y = y; pending.dx += dx; pending.dy += dy }
-    else pending = { x, y, dx, dy }
-    ask()
-  }
 
   const onTouchStart = (e: TouchStartEvent<Node | null>): void => {
     const touch: ActiveTouch = { pointerId: e.pointerId, x: e.clientX, y: e.clientY }
@@ -122,7 +64,23 @@ export const attachControls = (scene: PlacingScene, target: Node, options: Contr
             }
           }
         } else if (active.length === 1 && pan) {
-          drag(m.clientX, m.clientY, m.deltaX, m.deltaY)
+          // --- one-finger: drag across the ground plane, relative to where the camera looks ---
+          let dir = scene.camera.forward
+          const parent = target.parent
+          if (parent) dir = dir.rotate(parent.quaternion.invert()) // into the parent's local frame
+          dir = dir.withY(0)
+          const k = Math.hypot(dir.x, dir.z)
+          // the move's delta over the view's size: both logical units (a scene touch's, displaySize's), so
+          // a drag across the view slides the target by its distance from the camera on every host
+          const screen = Math.max(...scene.camera.displaySize)
+          if (k > 1e-4 && screen > 0) {
+            const dist = target.worldPosition.distanceTo(scene.camera.worldPosition)
+            const right = new Vec3(-dir.z, 0, dir.x).scale(m.deltaX / k / screen * dist)
+            const fwd = dir.scale(-m.deltaY / k / screen * dist)
+            const move = right.add(fwd)
+            const p = target.position
+            target.position = new Vec3(p.x + move.x, p.y, p.z + move.z) // keep height fixed
+          }
         }
         touch.x = m.clientX
         touch.y = m.clientY
@@ -135,12 +93,5 @@ export const attachControls = (scene: PlacingScene, target: Node, options: Contr
   }
 
   scene.addEventListener("touchstart", onTouchStart)
-  return {
-    remove() {
-      removed = true
-      pending = null
-      scene.removeEventListener("touchstart", onTouchStart)
-      active.length = 0
-    },
-  }
+  return { remove() { scene.removeEventListener("touchstart", onTouchStart); active.length = 0 } }
 }
