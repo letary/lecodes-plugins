@@ -43,6 +43,12 @@ lecodes plugin gen            # write them
 lecodes plugin gen --check    # fail on a stale one (CI)
 ```
 
+The generator reads a contract with the `typescript` package (5.x; TypeScript 6 is ESM-only and is
+not read): the plugin's own, looked up from its folder upwards, else the one next to the CLI's
+install — a dependency of `lecodes-cli` after 2.4.9, so a bun / npm install of the CLI brings it. A
+standalone binary of the CLI carries none: give the plugin's repo `typescript@^5.8.3` as a dev
+dependency (this repo does), or `bun add -g "typescript@^5.8.3"` next to a bun-installed CLI.
+
 `Package.swift` at the root is generated too: the iOS halves as one SwiftPM package — a target and a
 product per plugin (the manifest's `ios.module`, its `ios.packages` as dependencies, a binary target
 per `ios.binaries` xcframework). Each plugin is its own module, so two plugins may name a type alike,
