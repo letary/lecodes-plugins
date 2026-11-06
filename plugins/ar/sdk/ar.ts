@@ -10,8 +10,8 @@
 // the present (a host mounts and sizes the scene's view after it). A host without the plugin is
 // refused before anything is asked.
 //
-// `root` is a pose anchor like any other (`scene.anchor(pose)`): the wrapper pins it on the first
-// horizontal plane the session reports, so the halves know no root.
+// `root` is a pose anchor like any other (`scene.anchor(pose)`), placed by the wrapper — in front of
+// the user on the first floor the session reports (`_placeRoot`) — so the halves know no root.
 
 import {
   Geometry, Mat4, Material, Mesh, Node, Presentable, Quat, Router, Scene, System, Vec3, _ensurePermission, _navEpoch, _toFile,
@@ -61,6 +61,9 @@ export type ARSceneOptions = SceneOptions & {
   /** "world" (default): planes, hit tests, anchors, image and QR targets. "images": image and QR
    *  targets only — lighter on iOS; no planes, no hit test, no `root`. */
   mode?: ARMode
+  /** How far in front of the user `root` is placed, metres (default 1): along the camera's heading,
+   *  on the floor. */
+  rootDistance?: number
 }
 
 export type AROpenOptions = PresentOptions & Omit<StartOptions, "mode" | "images" | "codes"> & {
@@ -267,6 +270,8 @@ export class ARScene extends Scene {
   static get isSupported(): boolean { return supports() }
 
   readonly mode: ARMode
+  /** Metres between the user and `root` when it is placed (`rootDistance` option, default 1). */
+  readonly rootDistance: number
   /** `open()` warm-renders the scene first (default true). */
   useWarmRender = true
 
@@ -289,8 +294,9 @@ export class ARScene extends Scene {
   private _codesWarned = false
   private _options: AROpenOptions = {}
   private _root: Anchor | null = null
-  /** The first horizontal plane's pose: where `root` is pinned. */
-  private _floor: ARPose | null = null
+  /** The floor's height (world Y, metres): the first horizontal plane below the camera this session
+   *  found. Null until one is; `root` is placed on it. */
+  private _floor: number | null = null
   /** The image targets. `source` is held for the bytes: a fetched response owns its buffer, which the
    *  host frees once the response is collected — the File the session is handed only names it. */
   private readonly _images: { anchor: ImageAnchor, image: File, width: number, source: FetchResponse | File }[] = []
@@ -308,6 +314,7 @@ export class ARScene extends Scene {
   constructor(options: ARSceneOptions = {}) {
     super(options)
     this.mode = options.mode ?? "world"
+    this.rootDistance = options.rootDistance ?? 1
   }
 
   /** The tracking quality: "notAvailable" before a session, "limited" (with `trackingReason`) while
@@ -326,8 +333,12 @@ export class ARScene extends Scene {
     for (const plane of this._planes.values()) this._drawPlane(plane)
   }
 
-  /** The floor: an anchor pinned on the first horizontal plane the session finds (it fires `track`
-   *  then). Until that it is the world's origin — where the session began. Not in "images" mode. */
+  /** The place in front of the user: an anchor `rootDistance` metres ahead of the camera along its
+   *  heading, on the floor — the first horizontal plane below the camera the session finds; it is
+   *  pinned there and fires `track` then — turned the way the user looks (its −Z along the heading,
+   *  so a model's front, +Z, faces the user). Until the floor is found (and on the web, which finds
+   *  none) it sits the same way at the camera's own height, not pinned. Made on first use; put
+   *  content under it. `placeRoot()` puts it in front of the user again. Not in "images" mode. */
   get root(): Anchor {
     if (this._root) return this._root
     if (this.mode === "images") throw new Error('ARScene.root: there is no root in the "images" mode')
@@ -335,8 +346,17 @@ export class ARScene extends Scene {
     root._scene = this
     this.add(root)
     this._root = root
-    if (this._floor) this._pinRoot(this._floor)
+    this._placeRoot()
     return root
+  }
+
+  /** Put `root` in front of the user again — where they look now, `rootDistance` metres ahead, on the
+   *  floor if one is known (the camera's height otherwise), facing them: a "reset" button, or a
+   *  placement after the user has moved. Makes `root` when there is none yet. */
+  placeRoot(): Anchor {
+    if (!this._root) return this.root
+    this._placeRoot()
+    return this._root
   }
 
   /** An anchor that follows an image (a printed marker, a poster): the session finds it in the camera
@@ -677,11 +697,34 @@ export class ARScene extends Scene {
     this._pin(anchor, pose)
   }
 
-  /** `root` onto the floor (the first horizontal plane of this session). */
-  private _pinRoot(pose: ARPose): void {
+  /** Where `root` goes now: `rootDistance` metres from the camera along its heading (its forward
+   *  flattened to the floor; looking straight down or up, the way the top of the screen points), at
+   *  the floor's height when one is known, else the camera's; turned so its −Z runs along the
+   *  heading — a model's front (+Z) faces the user. */
+  private _rootPose(): ARPose {
+    const camera = this.camera
+    const eye = camera.worldPosition
+    const forward = camera.forward
+    let heading = new Vec3(forward.x, 0, forward.z)
+    if (heading.lengthSq() < 1e-6) {
+      // straight down (the usual way to look at a floor) or up: the screen's top points the way
+      const up = Vec3.up.rotate(camera.worldMatrix.rotation)
+      heading = new Vec3(up.x, 0, up.z)
+      if (forward.y > 0) heading = heading.negate()
+      if (heading.lengthSq() < 1e-6) heading = new Vec3(0, 0, -1)
+    }
+    heading = heading.normalize()
+    const position = new Vec3(eye.x + heading.x * this.rootDistance, this._floor ?? eye.y, eye.z + heading.z * this.rootDistance)
+    return { position, rotation: Quat.lookRotation(heading) }
+  }
+
+  /** `root` in front of the user: moved there now, and pinned there when the floor is known (a
+   *  session holds a pin; without one `_pinAll` does not re-pin root — it waits for its own floor). */
+  private _placeRoot(): void {
     const root = this._root!
+    const pose = this._rootPose()
     root.worldMatrix = Mat4.compose(pose.position, pose.rotation)
-    this._pin(root, pose)
+    if (this._floor !== null) this._pin(root, pose)
   }
 
   private _pin(anchor: Anchor, pose: ARPoseLike): void {
@@ -739,10 +782,12 @@ export class ARScene extends Scene {
     plane._polygon = p.polygon
     plane._setTracked(true)
     this._drawPlane(plane)
-    // the floor: the first horizontal plane, where root is pinned
-    if (added && p.type === "horizontal" && !this._floor) {
-      this._floor = pose
-      if (this._root) this._pinRoot(pose)
+    // the floor: the first horizontal plane below the camera (a ceiling is "horizontal" too), where
+    // root is placed — in front of the user, at the plane's height; the plane's centre and turn are
+    // a patch's and say nothing about where the user is
+    if (added && p.type === "horizontal" && this._floor === null && pose.position.y < this.camera.worldPosition.y) {
+      this._floor = pose.position.y
+      if (this._root) this._placeRoot()
     }
     this._emit("plane", { plane, change: added ? "added" : "updated", mergedInto: null })
   }
