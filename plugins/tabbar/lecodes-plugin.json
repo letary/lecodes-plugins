@@ -1,0 +1,13 @@
+{
+  "id": "tabbar",
+  "name": "Glass Tab Bar",
+  "version": "2.0.0",
+  "sdk": "^2.0.0",
+  "description": "The system tab bar as a node of the layout: on iOS 26+ the Liquid Glass UITabBar. The app's side is UIGlassTabBarNode(tabs).",
+  "ios": {
+    "module": "LeCodesTabBar",
+    "register": "LeCodesTabBarPlugin"
+  },
+  "android": null,
+  "web": null
+}

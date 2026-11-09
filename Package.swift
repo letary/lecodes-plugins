@@ -27,6 +27,7 @@ let package = Package(
         .library(name: "LeCodesPush", targets: ["LeCodesPush"]),
         .library(name: "LeCodesQRScanner", targets: ["LeCodesQRScanner"]),
         .library(name: "LeCodesSpeech", targets: ["LeCodesSpeech"]),
+        .library(name: "LeCodesTabBar", targets: ["LeCodesTabBar"]),
         .library(name: "LeCodesWebRTC", targets: ["LeCodesWebRTC"]),
     ],
     dependencies: [
@@ -89,6 +90,12 @@ let package = Package(
             name: "LeCodesSpeech",
             dependencies: [.product(name: "LeCodes", package: "lecodes")],
             path: "plugins/speech/ios"
+        ),
+        // tabbar
+        .target(
+            name: "LeCodesTabBar",
+            dependencies: [.product(name: "LeCodes", package: "lecodes")],
+            path: "plugins/tabbar/ios"
         ),
         // webrtc
         .target(
