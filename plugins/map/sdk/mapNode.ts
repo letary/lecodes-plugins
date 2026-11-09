@@ -1,6 +1,7 @@
 // UIMapNode — the map as a NODE of a screen's layout (contract.d.ts: the host node "map"): a box
 // sized by its styles like any element, drawn by the host's map view (maplibre-native on iOS and
-// Android; on the web and in headless runs an empty box — `UIMapNode.supported` is false there).
+// Android, maplibre-gl on Web Lite; on the web player, desktop and in headless runs an empty box —
+// `UIMapNode.supported` is false there).
 // The fullscreen map with widgets over it stays `MapView` (map.ts).
 //
 // Hand-written over the generated element (map.UIMap.gen.ts, the class `UIMapNode`, imported as
@@ -36,8 +37,8 @@ export type { UIMapNodeStyle }
  * A box like any element: size it with its styles (a `height`, or `flexGrow` in a column); it
  * measures nothing itself. Its corners follow `borderRadius` (the node clips: `overflow: "hidden"`
  * is its default style). Everything else is `MapView`'s: the layers, the camera calls, the events,
- * the queue until `onReady`. Branch on `UIMapNode.supported`: where it is `false` (the web, desktop,
- * headless runs, a build without the `map` plugin) the node is an empty box.
+ * the queue until `onReady`. Branch on `UIMapNode.supported`: where it is `false` (the web player,
+ * desktop, headless runs, a build without the `map` plugin) the node is an empty box.
  */
 export interface UIMapNode extends HostNodeElement<UIMapNodeStyle> {
   /** The style — a ready-made name, a URL, a bundled `asset()`, a read file or the style object
@@ -155,8 +156,8 @@ class MapNodeElement extends UIMapNodeBase {
 // PURE IIFE so an app that never builds a map node tree-shakes it away.
 export const UIMapNode: {
   (options?: MapOptions): UIMapNode
-  /** Does this host draw the map node (iOS and Android with the `map` plugin)? Read at run time, on
-   *  every access. */
+  /** Does this host draw the map node (iOS, Android and Web Lite with the `map` plugin)? Read at run
+   *  time, on every access. */
   readonly supported: boolean
 } = /*#__PURE__*/ (() => {
   const factory = (options: MapOptions = {}): UIMapNode => new MapNodeElement(options) as unknown as UIMapNode

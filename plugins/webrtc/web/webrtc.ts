@@ -1,17 +1,18 @@
 // webrtc on the web: the browser's own stack. A track, a sender, a transceiver and a data channel
 // are the browser's objects, kept here by an id the half allocates (a track by its own id); the
-// video view is a <video> fed by a MediaStream of the one track.
+// picture — the fullscreen view's and the host node's (`UIRTCVideoNode`, Web Lite's `hostnode`
+// feature) — is a <video> fed by a MediaStream of the one track.
 //
 // The channel is the contract's (../contract.d.ts): webrtc.gen.ts is generated from it, this file
-// implements its RtcMediaPlugin, RtcPeerConnectionPlugin and RtcVideoPlugin.
+// implements its RtcMediaPlugin, RtcPeerConnectionPlugin, RtcVideoPlugin and UIRTCVideoNodeHalf.
 
 import {
-  RtcMediaError, RtcPeerConnectionError, RtcVideoError, registerRtcMedia, registerRtcPeerConnection, registerRtcVideo,
-  type DataChannelInfo, type DataChannelInit, type DeviceInfo, type IceCandidate, type Json, type MediaConstraints,
+  RtcMediaError, RtcPeerConnectionError, RtcVideoError, registerRtcMedia, registerRtcPeerConnection, registerRtcVideo, registerUIRTCVideoNode,
+  type DataChannelInfo, type DataChannelInit, type DeviceInfo, type IceCandidate, type Json, type MediaConstraints, type ObjectFit,
   type OfferOptions, type PluginHost, type RtcConfiguration, type RtcMediaPlugin, type RtcPeerConnectionEvents,
   type RtcPeerConnectionPlugin, type RtcVideoPlugin, type SenderInfo, type SenderParameters, type SessionDescription,
   type StreamInfo, type TrackInfo, type TrackSettings, type TransceiverDirection, type TransceiverInfo, type TransceiverInit,
-  type VideoConstraints,
+  type UIRTCVideoNodeHalf, type VideoConstraints,
 } from "./webrtc.gen"
 
 // ---- the registry: the browser's objects by the ids on the wire ----------------------------------
@@ -367,42 +368,96 @@ const makePeerConnection = (host: PluginHost): void => {
 
 // ---- the picture -----------------------------------------------------------------------------------
 
-const makeVideo = (host: PluginHost): void => {
-  registerRtcVideo(host, (params, events, doc): RtcVideoPlugin => {
-    const el = doc.createElement("div")
-    el.style.cssText = "background:#000;overflow:hidden"
-    const video = doc.createElement("video")
+/** One track's picture: a <video> filling `el`, its `srcObject` a stream of the one track the half
+ *  keeps by id (`tracks`) — ONE class behind the fullscreen View's instance and the host node's half.
+ *  The fit is CSS `object-fit`, the mirror a CSS transform; `resize` comes from the element (its
+ *  first frame's size, every change after). An element taken out of the page pauses: shown again,
+ *  it plays on. */
+class RtcPicture {
+  readonly el: HTMLElement
+  private readonly video: HTMLVideoElement
+  private readonly shown: IntersectionObserver | null
+  private width = 0
+  private height = 0
+
+  constructor(doc: Document, private readonly events: { resize(payload: { width: number, height: number }): void }, private fit: ObjectFit, private mirror: boolean) {
+    this.el = doc.createElement("div")
+    this.el.style.background = "#000"
+    this.el.style.overflow = "hidden"
+    const video = this.video = doc.createElement("video")
     video.autoplay = true
     video.muted = true      // the audio of a call plays through the connection, never through the picture
     video.playsInline = true
     video.setAttribute("playsinline", "")
     video.style.cssText = "position:absolute;inset:0;width:100%;height:100%"
-    el.appendChild(video)
-
-    let fit = params.objectFit ?? "cover"
-    let mirror = params.mirror ?? false
-    const apply = (): void => {
-      video.style.objectFit = fit
-      video.style.transform = mirror ? "scaleX(-1)" : ""
+    this.el.appendChild(video)
+    this.apply()
+    const sized = (): void => {
+      if (!video.videoWidth || (video.videoWidth === this.width && video.videoHeight === this.height)) return
+      this.width = video.videoWidth
+      this.height = video.videoHeight
+      this.events.resize({ width: this.width, height: this.height })
     }
-    apply()
-    video.addEventListener("resize", () => { if (video.videoWidth) events.resize({ width: video.videoWidth, height: video.videoHeight }) })
+    video.addEventListener("loadedmetadata", sized)
+    video.addEventListener("resize", sized)
+    this.shown = typeof IntersectionObserver === "undefined" ? null : new IntersectionObserver((entries) => {
+      if (entries.some((e) => e.isIntersecting) && video.paused && video.srcObject) this.play()
+    })
+    this.shown?.observe(video)
+  }
 
-    const show = (trackId: string | null): void => {
-      if (trackId === null) { video.srcObject = null; return }
-      const track = tracks.get(trackId)
-      if (!track) throw new RtcVideoError("notFound")
-      video.srcObject = new MediaStream([track])
-      video.play().catch(() => { /* autoplay policy — the muted picture shows once playing is allowed */ })
-    }
-    try { show(params.trackId ?? null) } catch { /* a track that is gone: black */ }
+  private apply(): void {
+    this.video.style.objectFit = this.fit
+    this.video.style.transform = this.mirror ? "scaleX(-1)" : ""
+  }
 
+  private play(): void {
+    this.video.play().catch(() => { /* autoplay policy — the muted picture shows once playing is allowed */ })
+  }
+
+  /** Draw the track `trackId` (null = black). An id the half does not know: "notFound". */
+  show(trackId: string | null): void {
+    if (trackId === null) { this.video.srcObject = null; return }
+    const track = tracks.get(trackId)
+    if (!track) throw new RtcVideoError("notFound")
+    this.video.srcObject = new MediaStream([track])
+    this.play()
+  }
+
+  setObjectFit(fit: ObjectFit): void { this.fit = fit; this.apply() }
+  setMirror(mirror: boolean): void { this.mirror = mirror; this.apply() }
+
+  destroy(): void {
+    this.shown?.disconnect()
+    this.video.srcObject = null
+    this.el.remove()
+  }
+}
+
+const makeVideo = (host: PluginHost): void => {
+  registerRtcVideo(host, (params, events, doc): RtcVideoPlugin => {
+    const picture = new RtcPicture(doc, events, params.objectFit ?? "cover", params.mirror ?? false)
+    try { picture.show(params.trackId ?? null) } catch { /* a track that is gone: black */ }
     return {
-      el,
-      setTrack: (trackId) => { show(trackId) },
-      setObjectFit: (f) => { fit = f; apply() },
-      setMirror: (m) => { mirror = m; apply() },
-      destroy: () => { video.srcObject = null; el.remove() },
+      el: picture.el,
+      setTrack: (trackId) => { picture.show(trackId) },
+      setObjectFit: (f) => { picture.setObjectFit(f) },
+      setMirror: (m) => { picture.setMirror(m) },
+      destroy: () => { picture.destroy() },
+    }
+  })
+
+  // The node: its props are LIVE, each write applied as it lands — a `trackId` the half does not
+  // know draws black (the prop has no promise to reject; `setTrack` rejects "notFound").
+  registerUIRTCVideoNode(host, (events, doc): UIRTCVideoNodeHalf => {
+    const picture = new RtcPicture(doc, events, "cover", false)
+    return {
+      el: picture.el,
+      setTrackId: (trackId) => { try { picture.show(trackId ?? null) } catch { picture.show(null) } },
+      setTrack: (trackId) => { picture.show(trackId) },
+      setObjectFit: (fit) => { picture.setObjectFit(fit ?? "cover") },
+      setMirror: (mirror) => { picture.setMirror(mirror ?? false) },
+      destroy: () => { picture.destroy() },
     }
   })
 }

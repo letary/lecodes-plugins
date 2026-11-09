@@ -6,8 +6,8 @@
 //     app acts on, on two surfaces with one set of methods (WebViewMethods): the fullscreen VIEW
 //     "webView" (`WebView`: its own layer, `Router.push`, widgets over it) and the HOST NODE
 //     "webView" (`UIWebViewNode`: a box in a screen's layout, docs/plans/host-node-plan.md in core).
-//     On iOS and Android both are one page class under two thin instances; the web half is the
-//     View's only (a host node has none: an empty box there).
+//     On every platform both are one page class under two thin instances — on the web an <iframe>,
+//     the node's on Web Lite (the web player draws no host node: an empty box there).
 //
 // The hosts are dumb on purpose: they intercept a URL prefix and report it, forward the platform's
 // callback URL, hand a non-http link to the system. Which URL ends a flow and what it means is the

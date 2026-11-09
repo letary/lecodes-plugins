@@ -1,6 +1,8 @@
-// The maplibre-gl half of the map on the web — loaded lazily by map.ts. It implements the contract's
-// MapViewPlugin (map.gen.ts) and mirrors the iOS half (../ios/MapController.swift + MapLayers.swift)
-// rule for rule.
+// The maplibre-gl half of the map on the web — loaded lazily by map.ts: ONE map class behind the
+// fullscreen View's instance and the host node's half. It implements the contract's MapViewPlugin
+// (map.gen.ts) plus what a node's live props change (MapController: a style reload, a camera jump,
+// the zoom range, the gestures) and mirrors the iOS half (../ios/MapController.swift +
+// MapLayers.swift) rule for rule.
 //
 // Deliberately NOT here, as on the devices: maplibre's geolocate control (the puck is our own
 // GeoJSON source fed by the app), attribution/logo chrome, any permission prompt.
@@ -14,6 +16,20 @@ import {
 import type { MapResources } from "./map"
 
 type LngLat = [number, number]
+
+/** The map: the contract's calls, and what a node's live props change (../ios/MapController.swift's
+ *  "What a live prop changes"). */
+export type MapController = MapViewPlugin & {
+  /** Load another style, once: until it has loaded the calls that need the style reject
+   *  `notReady`; `ready` fires again then. Only a style that differs from the one shown is given. */
+  setStyle(url: string | undefined, json: string | undefined): void
+  /** Move the camera at once to what is given; undefined keeps that part of the camera. */
+  jump(center: LngLat | undefined, zoom: number | undefined, bearing: number | undefined, pitch: number | undefined): void
+  /** undefined = maplibre's own bound. */
+  setZoomRange(min: number | undefined, max: number | undefined): void
+  /** undefined = the contract's default: rotating on, tilting off. */
+  setGestures(rotate: boolean | undefined, tilt: boolean | undefined): void
+}
 type Managed = { kind: "styleOwned" } | { kind: MapLayerKind, layerIds: string[] }
 
 const DEFAULT_MARKER_COLOR = "#DD4B40"
@@ -103,7 +119,17 @@ const haloRadius = (accuracy: number, lat: number): any => {
   return ["step", radius, 0, 10, ["min", 600, radius]]
 }
 
-export const createMap = (el: HTMLElement, params: MapParams, events: MapViewEvents, doc: Document, resources: MapResources): MapViewPlugin => {
+/** `styleJson` is a style the SDK wrapper already read (a bundled `asset()`, a file the app read, an
+ *  inline style object); otherwise `style` is a URL maplibre fetches itself. */
+const styleOf = (url: string | undefined, json: string | undefined): string | StyleSpecification | null => {
+  if (json !== undefined) {
+    try { return JSON.parse(json) } catch { return null }
+  }
+  return url ?? null
+}
+const NO_STYLE: StyleSpecification = { version: 8, sources: {}, layers: [] }
+
+export const createMap = (el: HTMLElement, params: MapParams, events: MapViewEvents, doc: Document, resources: MapResources): MapController => {
   // The worker ships as a separate file that imports maplibre's shared chunk relative to itself;
   // maplibre derives its URL from import.meta.url of ITS module, which a bundled host no longer has
   // next to it. Whoever builds the half hands over the URL of a worker script that stands alone.
@@ -113,19 +139,12 @@ export const createMap = (el: HTMLElement, params: MapParams, events: MapViewEve
   const rotate = params.rotate !== false
   const tilt = params.tilt === true
   const center = coordinate(params.center)
-  // `styleJson` is a style the SDK wrapper already read (a bundled `asset()`, a file the app read,
-  // an inline style object); otherwise `style` is a URL maplibre fetches itself.
-  const style = ((): string | StyleSpecification | null => {
-    if (params.styleJson !== undefined) {
-      try { return JSON.parse(params.styleJson) } catch { return null }
-    }
-    return params.style ?? null
-  })()
+  const style = styleOf(params.style, params.styleJson)
   if (!style) events.error({ message: "the map has no style: give a URL or a style JSON" })
 
   const map = new MapLibreMap({
     container: el,
-    style: style ?? { version: 8, sources: {}, layers: [] },
+    style: style ?? NO_STYLE,
     center: center ?? [0, 0],
     zoom: params.zoom ?? (center ? 12 : 0),
     bearing: params.bearing ?? 0,
@@ -140,6 +159,8 @@ export const createMap = (el: HTMLElement, params: MapParams, events: MapViewEve
   if (!rotate) map.touchZoomRotate.disableRotation()
 
   let ready = false
+  /** A style the node asked for is loading: its `style.load` is the map's `ready` again. */
+  let reloading = false
   let managed = new Map<string, Managed>()
   let paddingSpec: MapPadding = {}
   let puck: { accuracy: number | null, lat: number } | null = null
@@ -154,8 +175,8 @@ export const createMap = (el: HTMLElement, params: MapParams, events: MapViewEve
 
   // ---- events ---------------------------------------------------------------------------------
 
-  map.on("load", () => {
-    // A style reload (only on a URL change today) drops every runtime source/layer.
+  const loaded = (): void => {
+    // A style (re)load drops every runtime source/layer.
     managed = new Map()
     puck = null
     ready = true
@@ -163,7 +184,11 @@ export const createMap = (el: HTMLElement, params: MapParams, events: MapViewEve
     // that is ready — the order of the native halves.
     events.ready()
     applyPadding()
-  })
+  }
+  // The first style's `ready` is the map's `load`; a style the node loads later is its `style.load`
+  // (one that came before the first `load` stands for it).
+  map.on("load", () => { if (!ready && !reloading) loaded() })
+  map.on("style.load", () => { if (!reloading) return; reloading = false; loaded() })
   // Before the style is up an error is fatal (a bad URL, a blocked host); after that maplibre
   // also reports every missing tile/sprite here — the native halves don't, so neither do we.
   map.on("error", (e) => {
@@ -381,8 +406,45 @@ export const createMap = (el: HTMLElement, params: MapParams, events: MapViewEve
     map.setPaintProperty(USER_HALO, "circle-radius", accuracy != null && accuracy > 0 ? haloRadius(accuracy, lngLat[1]) : 0)
   }
 
+  // ---- what a node's live props change ----------------------------------------------------------
+
+  const setStyle = (url: string | undefined, json: string | undefined): void => {
+    const next = styleOf(url, json)
+    if (!next) events.error({ message: "the map has no style: give a URL or a style JSON" })
+    ready = false
+    reloading = true
+    map.setStyle(next ?? NO_STYLE, { diff: false })
+  }
+
+  const jump = (at: LngLat | undefined, zoom: number | undefined, bearing: number | undefined, pitch: number | undefined): void => {
+    const center = coordinate(at)
+    map.jumpTo({
+      ...(center ? { center } : {}),
+      ...(zoom === undefined ? {} : { zoom }),
+      ...(bearing === undefined ? {} : { bearing }),
+      ...(pitch === undefined ? {} : { pitch }),
+    })
+  }
+
+  const setGestures = (rotate = true, tilt = false): void => {
+    if (rotate) { map.dragRotate.enable(); map.touchZoomRotate.enableRotation() }
+    else { map.dragRotate.disable(); map.touchZoomRotate.disableRotation() }
+    // the mouse's tilt is a part of the drag-rotate handler (its `pitchWithRotate`, an option of
+    // construction): kept in step through its own fields
+    const drag = map.dragRotate as unknown as { _pitchWithRotate?: boolean, _mousePitch?: { enable(): void, disable(): void } }
+    drag._pitchWithRotate = tilt
+    if (rotate && tilt) drag._mousePitch?.enable()
+    else drag._mousePitch?.disable()
+    if (tilt) map.touchPitch.enable()
+    else map.touchPitch.disable()
+  }
+
   return {
     el,
+    setStyle,
+    jump,
+    setZoomRange: (min, max) => { map.setMinZoom(min ?? null); map.setMaxZoom(max ?? null) },
+    setGestures,
     ensureLayer,
     removeLayer,
     setData,

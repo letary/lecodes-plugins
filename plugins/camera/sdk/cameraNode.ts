@@ -1,7 +1,8 @@
 // UICameraNode — the device camera's live preview as a NODE of a screen's layout (contract.d.ts:
 // the host node "camera"): a box sized by its styles like any element, filled by the preview
-// (aspect-fill), with still capture. Drawn on iOS and Android; on the web and in headless runs an
-// empty box — `UICameraNode.supported` is false there. The fullscreen camera with widgets over it
+// (aspect-fill), with still capture. Drawn on iOS, Android and Web Lite (a <video> over
+// getUserMedia); on the web player, desktop and in headless runs an empty box —
+// `UICameraNode.supported` is false there. The fullscreen camera with widgets over it
 // stays `CameraView` (camera.ts).
 //
 // Hand-written over the generated element (camera.UICamera.gen.ts, the class `UICameraNode`,
@@ -34,8 +35,8 @@ export type { UICameraNodeStyle }
  * measures nothing itself. Its corners follow `borderRadius` (the node clips: `overflow: "hidden"`
  * is its default style). The camera permission is asked when the preview starts (right after the
  * node is first shown); denied, `onError` hears it and the box stays empty. Branch on
- * `UICameraNode.supported`: where it is `false` (the web, desktop, headless runs, a build without
- * the `camera` plugin) the node is an empty box.
+ * `UICameraNode.supported`: where it is `false` (the web player, desktop, headless runs, a build
+ * without the `camera` plugin, a page that is not a secure context) the node is an empty box.
  */
 export interface UICameraNode extends HostNodeElement<UICameraNodeStyle> {
   /** The camera shown — writing it switches the preview. Default "back". */
@@ -80,8 +81,8 @@ class CameraNodeElement extends UICameraNodeBase {
 // PURE IIFE so an app that never builds a camera node tree-shakes it away.
 export const UICameraNode: {
   (options?: { facingMode?: CameraFacing }): UICameraNode
-  /** Does this host draw the camera node (iOS and Android with the `camera` plugin)? Read at run
-   *  time, on every access. */
+  /** Does this host draw the camera node (iOS, Android and Web Lite with the `camera` plugin)? Read
+   *  at run time, on every access. */
   readonly supported: boolean
 } = /*#__PURE__*/ (() => {
   const factory = (options: { facingMode?: CameraFacing } = {}): UICameraNode =>

@@ -5,10 +5,10 @@
 // and a track is drawn on two surfaces with one set of methods (RtcVideoMethods): the fullscreen
 // VIEW "rtcVideo" (`RTCVideoView`: its own layer, `Router.push`, widgets over it) and the HOST NODE
 // "rtcVideo" (`UIRTCVideoNode`: a box in a screen's layout, docs/plans/host-node-plan.md in core) —
-// on iOS and Android one video class under two thin instances; the web half is the View's only (a
-// host node has none: an empty box there). Tracks, senders, transceivers and data channels
-// live in the host; what crosses is an id the host allocated. A remote track (the `track` event)
-// is a track like any other: the view shows it, another connection can forward it.
+// on every platform one video class under two thin instances (on the web a <video>, the node's on
+// Web Lite; the web player draws no host node: an empty box there). Tracks, senders, transceivers
+// and data channels live in the host; what crosses is an id the host allocated. A remote track (the
+// `track` event) is a track like any other: the view shows it, another connection can forward it.
 //
 // Signaling is NOT here: the app carries the descriptions and the candidates over its own
 // channel (a WebSocket). The halves are dumb on purpose — no room, no call, no server — so that a

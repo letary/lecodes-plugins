@@ -21,9 +21,10 @@
 //     races both and the host does nothing it would not do for a plain deep link;
 //   - the embedded flow is a UIWebViewNode (webViewNode.ts) with the return URLs as its `stops`, at
 //     `flex: 1` in a screen under a close bar, pushed through the Router when one is showing and
-//     opened directly otherwise. A host that draws no such node rejects it — the web among them
-//     until host nodes reach it (host-node-plan phase 8): a View is a destination, never a part of
-//     a screen (7b), so there is no embedded View to fall back on.
+//     opened directly otherwise — on iOS, Android and the web (Web Lite: an <iframe>, which sees
+//     the stop URL only when it is on the app's own origin). A host that draws no such node (the
+//     web player, desktop, a headless run) rejects it: a View is a destination, never a part of a
+//     screen, so there is no embedded View to fall back on.
 //
 // WebView() is the fullscreen page: push it with your own chrome over it (`widgets`), drive it
 // (`load`, `evaluate`, `postMessage`) and listen (`navigate`, `load`, `stop`, `message`). A page
@@ -139,10 +140,9 @@ const openSheet = (url: string, options: BrowserOpenOptions): Promise<string | n
 // ---- the embedded page ----------------------------------------------------------------------------
 
 const openEmbedded = (url: string, options: BrowserOpenOptions): Promise<string | null> => new Promise((resolve, reject) => {
-  // The page is the host node, a box of the screen's layout (iOS, Android). A host that draws no
-  // "webView" node — the web until host-node-plan phase 8 brings host nodes there, desktop, a
-  // headless run — has no page inside a screen at all.
-  if (!WebViewNodeElement.supported) return reject(unsupported("Browser.open({ embedded: true })", `"${VIEW_NAME}" node — the web has none yet (host nodes reach it later): use the sheet there, or push a fullscreen WebView`))
+  // The page is the host node, a box of the screen's layout (iOS, Android, Web Lite). A host that
+  // draws no "webView" node — the web player, desktop, a headless run — has no page inside a screen.
+  if (!WebViewNodeElement.supported) return reject(unsupported("Browser.open({ embedded: true })", `"${VIEW_NAME}" node — this host draws none (the web player, desktop and headless runs have no host nodes): use the sheet there, or push a fullscreen WebView`))
   const stops = returnUrls(options)
   const props: WebViewProps = { url, stops }
   if (options.ephemeral) props.ephemeral = true

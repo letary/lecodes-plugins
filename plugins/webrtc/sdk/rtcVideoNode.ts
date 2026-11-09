@@ -1,7 +1,7 @@
 // UIRTCVideoNode — one video track as a NODE of a screen's layout (contract.d.ts: the host node
 // "rtcVideo"): a box sized by its styles like any element, the picture drawn by the host's renderer
-// (libwebrtc's on iOS and Android; on the web and in headless runs an empty box —
-// `UIRTCVideoNode.supported` is false there). The fullscreen picture with widgets over it stays
+// (libwebrtc's on iOS and Android, a <video> on Web Lite; on the web player, desktop and in headless
+// runs an empty box — `UIRTCVideoNode.supported` is false there). The fullscreen picture with widgets over it stays
 // `RTCVideoView` (webrtc.ts, which re-exports this node).
 //
 // Hand-written over the generated element (webrtc.UIRTCVideo.gen.ts, the class `UIRTCVideoNode`,
@@ -36,8 +36,8 @@ export type { UIRTCVideoNodeStyle }
  * measures nothing itself — `onResize` tells the picture's size, for an `aspectRatio` of yours. It
  * is black where there is no picture; its corners follow `borderRadius` (the node clips:
  * `overflow: "hidden"` is its default style). Branch on `UIRTCVideoNode.supported`: where it is
- * `false` (the web, desktop, headless runs, a build without the `webrtc` plugin) the node is an
- * empty box.
+ * `false` (the web player, desktop, headless runs, a build without the `webrtc` plugin) the node is
+ * an empty box.
  */
 export interface UIRTCVideoNode extends HostNodeElement<UIRTCVideoNodeStyle> {
   /** The track drawn, local or received; null = black. Writing it switches the picture. */
@@ -76,8 +76,8 @@ class RTCVideoNodeElement extends UIRTCVideoNodeBase {
 // PURE IIFE so an app that never shows a track in a screen tree-shakes it away.
 export const UIRTCVideoNode: {
   (options?: RTCVideoViewOptions): UIRTCVideoNode
-  /** Does this host draw the video node (iOS and Android with the `webrtc` plugin)? Read at run
-   *  time, on every access. */
+  /** Does this host draw the video node (iOS, Android and Web Lite with the `webrtc` plugin)? Read
+   *  at run time, on every access. */
   readonly supported: boolean
 } = /*#__PURE__*/ (() => {
   const factory = (options: RTCVideoViewOptions = {}): UIRTCVideoNode => new RTCVideoNodeElement(options) as unknown as UIRTCVideoNode

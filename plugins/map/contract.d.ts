@@ -1,8 +1,9 @@
 // map — a vector map (maplibre-native on iOS / Android, maplibre-gl in the browser), on two surfaces
 // with one set of methods (MapMethods): the fullscreen VIEW "map" (`MapView`: its own layer,
 // `Router.push`, widgets over it) and the HOST NODE "map" (`UIMapNode`: a box in a screen's layout,
-// docs/plans/host-node-plan.md in core). On iOS and Android both are one map class under two thin
-// instances; the web half is the View's only (a host node has none: an empty box there).
+// docs/plans/host-node-plan.md in core). On every platform both are one map class under two thin
+// instances — on the web maplibre-gl, the node's on Web Lite (the web player draws no host node: an
+// empty box there).
 // The wire is lower than the app-facing wrappers: the shared logic in sdk/ resolves a style to a url
 // or to text, turns marker items into GeoJSON, queues calls until `ready` and re-applies the
 // style-lifetime state (layers, data, padding, the user puck) after every style load.

@@ -1,8 +1,9 @@
 // camera — a live camera preview with still capture, on two surfaces with one set of methods
 // (CameraMethods): the fullscreen VIEW "camera" (`CameraView`: its own layer, `Router.push`, widgets
 // over it) and the HOST NODE "camera" (`UICameraNode`: a box in a screen's layout,
-// docs/plans/host-node-plan.md in core). On iOS and Android both are one preview class under two
-// thin instances; the web half is the View's only (a host node has none: an empty box there).
+// docs/plans/host-node-plan.md in core). On every platform both are one preview class under two
+// thin instances — on the web a <video> over getUserMedia, the node's on Web Lite (the web player
+// draws no host node: an empty box there).
 // The contract of the WIRE: what the app-facing wrappers (sdk/) and the halves (ios/, android/,
 // web/) agree on. The generator reads this file; nothing else describes the channel.
 //

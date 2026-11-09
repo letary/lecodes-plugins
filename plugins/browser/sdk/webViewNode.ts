@@ -1,7 +1,7 @@
 // UIWebViewNode — a web page as a NODE of a screen's layout (contract.d.ts: the host node "webView"):
 // a box sized by its styles like any element, drawn by the host's web view (WKWebView on iOS,
-// android.webkit.WebView on Android; on the web and in headless runs an empty box —
-// `UIWebViewNode.supported` is false there). The fullscreen page with widgets over it stays
+// android.webkit.WebView on Android, an <iframe> on Web Lite; on the web player, desktop and in
+// headless runs an empty box — `UIWebViewNode.supported` is false there). The fullscreen page with widgets over it stays
 // `WebView` (browser.ts); `Browser.open(url, { embedded: true })` builds its screen on this node.
 //
 // Hand-written over the generated element (browser.UIWebView.gen.ts, the class `UIWebViewNode`,
@@ -37,7 +37,9 @@ export type { UIWebViewNodeStyle, WebViewProps }
  * measures nothing itself. Its corners follow `borderRadius` (the node clips: `overflow: "hidden"`
  * is its default style). Its calls work from the start — one made right after the factory reaches
  * the page once the node is made. Branch on `UIWebViewNode.supported`: where it is `false` (the
- * web, desktop, headless runs, a build without the `browser` plugin) the node is an empty box.
+ * web player, desktop, headless runs, a build without the `browser` plugin) the node is an empty
+ * box. On Web Lite the page is an <iframe>: of a cross-origin page it knows no navigation, no title,
+ * no link — `onStop` fires for a stop URL on the app's own origin only.
  */
 export interface UIWebViewNode extends HostNodeElement<UIWebViewNodeStyle> {
   /** The page to show — writing it loads it (writing the same URL again reloads it; clearing it
@@ -113,8 +115,8 @@ export class WebViewNodeElement extends UIWebViewNodeBase {
 // PURE IIFE so an app that never builds a web page node tree-shakes it away.
 export const UIWebViewNode: {
   (props?: WebViewProps): UIWebViewNode
-  /** Does this host draw the web page node (iOS and Android with the `browser` plugin)? Read at run
-   *  time, on every access. */
+  /** Does this host draw the web page node (iOS, Android and Web Lite with the `browser` plugin)?
+   *  Read at run time, on every access. */
   readonly supported: boolean
 } = /*#__PURE__*/ (() => {
   const factory = (props: WebViewProps = {}): UIWebViewNode => new WebViewNodeElement(props) as unknown as UIWebViewNode
