@@ -25,17 +25,13 @@
 
 package io.letary.lecodes.plugins.push
 
-import android.Manifest
 import android.content.Context
 import android.content.Intent
 import android.content.SharedPreferences
-import android.content.pm.PackageManager
-import android.os.Build
 import android.util.Log
-import androidx.core.app.NotificationManagerCompat
-import androidx.core.content.ContextCompat
 import com.google.firebase.messaging.FirebaseMessaging
 import io.letary.lecodes.LecodesEngine
+import io.letary.lecodes.services.Permissions
 import io.letary.lecodes.services.Reply
 import io.letary.lecodes.services.resolve
 import org.json.JSONObject
@@ -95,12 +91,12 @@ object PushManager {
     // ── service calls ────────────────────────────────────────────────────────
 
     fun getStatus(): PushStatus {
-        val granted = if (notificationsEnabled()) PushStatusPermission.GRANTED else PushStatusPermission.DENIED
-        val permission = when {
-            Build.VERSION.SDK_INT < 33 -> granted
-            ContextCompat.checkSelfPermission(appContext, Manifest.permission.POST_NOTIFICATIONS) ==
-                PackageManager.PERMISSION_GRANTED -> granted
-            prefs.getBoolean("permissionRequested", false) -> PushStatusPermission.DENIED
+        // The OS permission from the engine's one door (services/Permissions.kt, the "notifications"
+        // kind — the same switch local notifications ask): its bookkeeping of "asked once" is shared,
+        // so a dialog shown by either side counts for both.
+        val permission = when (engine?.permissions?.query(Permissions.Kind.NOTIFICATIONS)) {
+            Permissions.State.GRANTED -> PushStatusPermission.GRANTED
+            Permissions.State.DENIED -> PushStatusPermission.DENIED
             else -> PushStatusPermission.PROMPT
         }
         // The address of this world's registration, from the store alone: no prompt, no I/O.
@@ -266,20 +262,12 @@ object PushManager {
 
     // ── permission (house rule: prompt on first call, never in factory) ──────
 
-    private fun notificationsEnabled() = NotificationManagerCompat.from(appContext).areNotificationsEnabled()
-
+    /** The "notifications" kind of the engine's permission door: the dialog when never asked (on
+     *  33+; before 33 the app's notification switch, no dialog), `body` when granted. */
     private fun withPermission(reply: Reply<*, PushCode>, body: () -> Unit) {
-        if (Build.VERSION.SDK_INT < 33) {
-            if (notificationsEnabled()) body() else reply.reject(PushCode.DENIED)
-            return
-        }
-        if (ContextCompat.checkSelfPermission(appContext, Manifest.permission.POST_NOTIFICATIONS) ==
-            PackageManager.PERMISSION_GRANTED) return body()
         val e = engine ?: return reply.reject(PushCode.DENIED)
-        if (e.getActivity() == null) return reply.reject(PushCode.DENIED)
-        prefs.edit().putBoolean("permissionRequested", true).apply()
-        e.permissions.request(arrayOf(Manifest.permission.POST_NOTIFICATIONS)) { granted ->
-            if (granted) body() else reply.reject(PushCode.DENIED)
+        e.permissions.request(Permissions.Kind.NOTIFICATIONS, onError = { reply.reject(PushCode.DENIED) }) { state ->
+            if (state == Permissions.State.GRANTED) body() else reply.reject(PushCode.DENIED)
         }
     }
 

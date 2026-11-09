@@ -135,17 +135,17 @@ public final class PushManager: LeCodesNotificationHandler {
     // MARK: - Service calls (invoked by PushService on the main thread)
 
     func getStatus(_ projectUuid: String?, _ reply: Reply<PushStatus, PushCode>) {
-        UNUserNotificationCenter.current().getNotificationSettings { settings in
-            let permission: PushStatusPermission
-            switch settings.authorizationStatus {
-            case .authorized, .provisional, .ephemeral: permission = .granted
-            case .denied: permission = .denied
-            default: permission = .prompt
-            }
-            // The address of this world's registration, from the store alone: no prompt, no I/O.
-            let address = projectUuid.flatMap { self.persistedRegistrations()[$0]?["address"] }
-            reply.resolve(PushStatus(permission: permission, registered: address != nil, address: address))
+        // The OS permission from the engine's one door (services/Permissions.swift, the
+        // "notifications" kind — the same switch local notifications ask).
+        let permission: PushStatusPermission
+        switch engine?.permissions.query(.notifications) {
+        case .granted?: permission = .granted
+        case .denied?: permission = .denied
+        default: permission = .prompt
         }
+        // The address of this world's registration, from the store alone: no prompt, no I/O.
+        let address = projectUuid.flatMap { persistedRegistrations()[$0]?["address"] }
+        reply.resolve(PushStatus(permission: permission, registered: address != nil, address: address))
     }
 
     func register(_ projectUuid: String?, _ options: PushRegisterOptions?, _ reply: Reply<PushRegistration, PushCode>) {
@@ -159,9 +159,10 @@ public final class PushManager: LeCodesNotificationHandler {
         // displays the push itself and no LeCodes code runs, so a device-side gate could never be
         // the real control. Per-project opt-out lives on the registration row (`Push.unregister()`,
         // and the mute the launcher sets) — see docs/push-plan.md.
-        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) { granted, _ in
+        guard let engine else { return reply.reject(.unavailable) }
+        engine.permissions.request(.notifications) { state in
             onMainThread { [self] in
-                guard granted else { return reply.reject(.denied) }
+                guard state == .granted else { return reply.reject(.denied) }
                 withDeviceToken { [self] token in
                     guard let token else { return reply.reject(.unavailable) }
                     registerWithBackend(uuid, user: user, token: token) { address in
