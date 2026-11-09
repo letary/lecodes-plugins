@@ -2,14 +2,18 @@
 //   - the SYSTEM SHEET (the "browser" service): SFSafariViewController / ASWebAuthenticationSession on
 //     iOS, Chrome Custom Tabs on Android, a popup on the web. It shares the system browser's logins,
 //     passkeys and Apple Pay, and OAuth providers accept it. The app sees nothing of the page.
-//   - the EMBEDDED PAGE (the "webView" view): WKWebView / android.webkit.WebView / an iframe. A tree
-//     node the app embeds or presents fullscreen, with navigation events the app acts on.
+//   - the EMBEDDED PAGE: WKWebView / android.webkit.WebView / an iframe, with navigation events the
+//     app acts on, on two surfaces with one set of methods (WebViewMethods): the fullscreen VIEW
+//     "webView" (`WebView`: its own layer, `Router.push`, widgets over it) and the HOST NODE
+//     "webView" (`UIWebViewNode`: a box in a screen's layout, docs/plans/host-node-plan.md in core).
+//     On iOS and Android both are one page class under two thin instances; the web half is the
+//     View's only (a host node has none: an empty box there).
 //
 // The hosts are dumb on purpose: they intercept a URL prefix and report it, forward the platform's
 // callback URL, hand a non-http link to the system. Which URL ends a flow and what it means is the
 // app's side (`Browser.open` in sdk/).
 
-import type { Json, Service, View } from "lecodes-sdk/plugin"
+import type { Json, Service, UIHostNode, View } from "lecodes-sdk/plugin"
 
 // ---- the sheet ------------------------------------------------------------------------------------
 
@@ -83,7 +87,8 @@ export interface WebViewEvents {
   exit: void
 }
 
-export interface WebView extends View<"webView", WebViewParams, WebViewEvents> {
+/** The methods of both surfaces: the View's and the node's, one implementation per platform. */
+export interface WebViewMethods {
   /** Load `url`, with extra request headers for the first request. @rejects invalid */
   load(url: string, headers?: { [name: string]: string }): Promise<void>
   /** Show `html` as the page; relative URLs in it resolve against `baseUrl`. */
@@ -104,3 +109,34 @@ export interface WebView extends View<"webView", WebViewParams, WebViewEvents> {
   /** Clear the cookies and the storage of this view's session. */
   clearData(): Promise<void>
 }
+
+/** The node's props: the View's params. `url`, `stops` and `externalLinks` are LIVE — a `url` write
+ *  loads it (the props one commit writes land together: one load), a `stops` write is `setStops`,
+ *  an `externalLinks` write applies to the next link. `bridge`, `userAgent` and `ephemeral` make the
+ *  platform's web view (WKWebView's configuration): read at the node's first commit, the view made
+ *  then — a later write of one is ignored, with a warning in the host's log. */
+export interface WebViewProps {
+  /** What to load; a write loads it (clearing it loads nothing). */
+  url?: string
+  /** Main-frame URLs that END a flow: a navigation whose URL starts with one is NOT loaded, the
+   *  node emits `stop` instead. */
+  stops?: string[]
+  /** Install `window.lecodes.postMessage(data)` for the page (the `message` event) and let
+   *  `postMessage` reach it (`window.lecodes.onMessage`). Default false — a user script disables
+   *  Apple Pay in that WKWebView, so a checkout page wants it off. At creation only. */
+  bridge?: boolean
+  /** A navigation to a non-http(s) URL — tel:, mailto:, intent:, a bank's app in a checkout:
+   *  "open" hands it to the system, "block" drops it. Default "open". */
+  externalLinks?: "open" | "block"
+  /** At creation only. */
+  userAgent?: string
+  /** A private session: no cookies or storage kept after the node goes. Default false. At creation
+   *  only. */
+  ephemeral?: boolean
+}
+
+export interface WebView extends View<"webView", WebViewParams, WebViewEvents>, WebViewMethods {}
+
+/** The page as a node of the layout: a box in a screen, sized by its styles, drawn by the host's web
+ *  view; the holder paints the box (radius, border, shadow) over it. */
+export interface UIWebView extends UIHostNode<"webView", WebViewProps, WebViewEvents>, WebViewMethods {}

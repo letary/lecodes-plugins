@@ -37,7 +37,7 @@ public struct QRScannerEvents {
 /// What the plugin implements. A call arrives on the main thread; its reply is settled exactly
 /// once, now or later, from any thread.
 public protocol QRScannerPlugin: AnyObject {
-    /// The view the host mounts: fullscreen, or embedded among a screen's children.
+    /// The view the host mounts, fullscreen: a View is a destination, never a node of a layout (a node is a UIHostNode).
     var view: UIView { get }
 
     /// The instance goes (the world swapped): release the hardware.

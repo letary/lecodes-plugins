@@ -1,11 +1,15 @@
-// map — a vector map (maplibre-native on iOS / Android, maplibre-gl in the browser).
-// The wire is lower than the app-facing `MapView`: the wrapper in sdk/ resolves a style to a url or
-// to text, turns marker items into GeoJSON, queues calls until `ready` and re-applies the
+// map — a vector map (maplibre-native on iOS / Android, maplibre-gl in the browser), on two surfaces
+// with one set of methods (MapMethods): the fullscreen VIEW "map" (`MapView`: its own layer,
+// `Router.push`, widgets over it) and the HOST NODE "map" (`UIMapNode`: a box in a screen's layout,
+// docs/plans/host-node-plan.md in core). On iOS and Android both are one map class under two thin
+// instances; the web half is the View's only (a host node has none: an empty box there).
+// The wire is lower than the app-facing wrappers: the shared logic in sdk/ resolves a style to a url
+// or to text, turns marker items into GeoJSON, queues calls until `ready` and re-applies the
 // style-lifetime state (layers, data, padding, the user puck) after every style load.
 //
 // The plugin never touches the location hardware: the user puck is fed by the app.
 
-import type { Json, View, f64 } from "lecodes-sdk/plugin"
+import type { Json, UIHostNode, View, f64 } from "lecodes-sdk/plugin"
 
 /** `[longitude, latitude]` — GeoJSON order. */
 export type LngLat = [f64, f64]
@@ -117,7 +121,8 @@ export interface MapUserLocationOptions {
   heading?: f64 | null
 }
 
-export interface MapView extends View<"map", MapParams, MapEvents> {
+/** The methods of both surfaces: the View's and the node's, one implementation per platform. */
+export interface MapMethods {
   /** Make sure the GeoJSON source `source` exists. A source the style declares is used as is (its
    *  layers draw, only data flows); otherwise the half creates it with the default layers of `kind`.
    *  @rejects notReady */
@@ -140,3 +145,36 @@ export interface MapView extends View<"map", MapParams, MapEvents> {
   /** Move the user puck; null hides it. */
   setUserLocation(lngLat: LngLat | null, options?: MapUserLocationOptions): Promise<void>
 }
+
+/** The node's props: the View's params, LIVE. The props one commit writes land together: a style
+ *  write reloads the style once (the map then fires `ready` again), a camera write (`center`,
+ *  `zoom`, `bearing`, `pitch`) is one jump to what was written, the rest of the camera kept. The
+ *  first commit makes the map, with these as its first view — the style before anything else: the
+ *  map loads one style, never a default one first. */
+export interface MapProps {
+  /** A style URL the map fetches itself. (`style` is the element's `.style()`: the View's param
+   *  `style`, renamed.) */
+  styleUrl?: string
+  /** A style as JSON text; wins over `styleUrl`. It has no base url: every url INSIDE it (sources,
+   *  sprite, glyphs) must be absolute. */
+  styleJson?: string
+  center?: LngLat
+  /** Default 12 with a center, when the map is made. */
+  zoom?: f64
+  minZoom?: f64
+  maxZoom?: f64
+  /** Degrees clockwise from north. */
+  bearing?: f64
+  /** Degrees from the vertical. */
+  pitch?: f64
+  /** The two-finger rotate gesture. Default true. */
+  rotate?: boolean
+  /** The two-finger tilt gesture. Default false. */
+  tilt?: boolean
+}
+
+export interface MapView extends View<"map", MapParams, MapEvents>, MapMethods {}
+
+/** The map as a node of the layout: a box in a screen, sized by its styles, drawn by the host's map
+ *  view; the holder paints the box (radius, border, shadow) over it. */
+export interface UIMap extends UIHostNode<"map", MapProps, MapEvents>, MapMethods {}

@@ -1,12 +1,14 @@
 // CameraView — the device camera (a live preview + still capture) as a view the app opens
-// fullscreen (`await camera.open()`), pushes (`Router.push(camera)`) or embeds among a screen's
-// children. `takePhoto()` returns a `File`: a texture source, a `FormData` value, a share.
+// fullscreen (`await camera.open()`) or pushes (`Router.push(camera)`): a destination, never a
+// child of a screen. `takePhoto()` returns a `File`: a texture source, a `FormData` value, a share.
+// The preview as a node of a screen's layout is `UICameraNode` (cameraNode.ts).
 //
 // Hand-written over the generated wire for ONE reason: the permission is asked BEFORE the view is
-// presented, while the current destination stays visible.
+// presented, while the current destination stays visible. (The node's half asks for it itself:
+// a node is no destination.) Nothing else is shared with the node's wrapper: both are thin.
 
 import { prepareCamera, type File, type NativeView, type PresentOptions } from "lecodes-sdk/plugin"
-import { CameraViewBase, NAME } from "./camera.gen"
+import { CameraViewBase, NAME } from "./camera.CameraView.gen"
 import type { Facing } from "../contract"
 
 export type CameraFacing = Facing

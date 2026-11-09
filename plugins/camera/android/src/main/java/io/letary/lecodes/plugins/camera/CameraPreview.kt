@@ -1,9 +1,13 @@
 //
-//  CameraView.kt — lecodes-plugins/camera
+//  CameraPreview.kt — lecodes-plugins/camera
 //
-//  Camera2 SurfaceView with an aspect-fill layout override, JPEG still capture, and
-//  facing-mode switching. Permission must already be granted before the view opens
-//  (the SDK's prepare path handles the prompt).
+//  The ONE camera preview behind both surfaces of the plugin (contract.d.ts), the Kotlin twin of
+//  CameraPreview.swift: the fullscreen view "camera" (CameraViewInstance) and the host node "camera"
+//  (CameraNodeInstance, a box of a screen's layout — LeCodesCameraPlugin.kt) each wrap one: a
+//  Camera2 SurfaceView with an aspect-fill layout override, JPEG still capture, and facing-mode
+//  switching. The surfaces differ only in WHEN it starts (LeCodesCameraPlugin.kt says why):
+//  `start()` once, and from then on the camera is open while the surface exists. The permission is
+//  granted before `start()` (the View's by the SDK's prepare path, the node's by its instance).
 //
 
 package io.letary.lecodes.plugins.camera
@@ -19,6 +23,7 @@ import android.hardware.camera2.CaptureRequest
 import android.media.ImageReader
 import android.os.Handler
 import android.os.HandlerThread
+import android.os.Looper
 import android.view.Surface
 import android.view.SurfaceHolder
 import android.view.SurfaceView
@@ -26,13 +31,22 @@ import kotlin.math.roundToInt
 
 enum class CameraFacingMode { FRONT, BACK }
 
+internal fun Facing?.mode() = if (this == Facing.FRONT) CameraFacingMode.FRONT else CameraFacingMode.BACK
+
 @SuppressLint("ViewConstructor")
-class CameraView(
+class CameraPreview(
     context: Context,
     private var facingMode: CameraFacingMode = CameraFacingMode.BACK
 ) : SurfaceView(context), SurfaceHolder.Callback {
 
+    /** The preview could not start or stopped, as the app reads it (the contract's `error`). Main thread. */
+    var onError: ((String) -> Unit)? = null
+
     // region Private fields
+
+    /** `start()` ran: the camera opens whenever the surface exists. */
+    private var started = false
+    private var didShutdown = false
 
     private val cameraManager = context.getSystemService(Context.CAMERA_SERVICE) as CameraManager
 
@@ -90,16 +104,14 @@ class CameraView(
     // region SurfaceHolder.Callback
 
     override fun surfaceCreated(holder: SurfaceHolder) {
-        startBackgroundThread()
         currentSurface = holder.surface
-        openCamera(holder.surface)
+        if (started && !didShutdown) open(holder.surface)
     }
 
     override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) {}
 
     override fun surfaceDestroyed(holder: SurfaceHolder) {
-        closeCamera()
-        stopBackgroundThread()
+        close()
         currentSurface = null
     }
 
@@ -107,9 +119,26 @@ class CameraView(
 
     // region Public API
 
+    /** Open the camera of the facing mode written last, now when the surface exists, else when it
+     *  comes. Once; nothing after [shutdown]. */
+    fun start() {
+        if (started || didShutdown) return
+        started = true
+        currentSurface?.let { open(it) }
+    }
+
+    /** Explicit teardown (the instance's destroy): the camera closes and stays closed. Idempotent. */
+    fun shutdown() {
+        didShutdown = true
+        onError = null
+        close()
+    }
+
+    /** Switch the camera; before [start] it only picks the one [start] opens. */
     fun cameraSetFacingMode(mode: CameraFacingMode) {
         if (facingMode == mode) return
         facingMode = mode
+        if (!started || didShutdown) return
         val surface = currentSurface ?: return
         closeCamera()
         openCamera(surface)
@@ -153,8 +182,19 @@ class CameraView(
 
     // region Camera open / close
 
+    private fun open(surface: Surface) {
+        startBackgroundThread()
+        openCamera(surface)
+    }
+
+    private fun close() {
+        closeCamera()
+        stopBackgroundThread()
+    }
+
     private fun openCamera(previewSurface: Surface) {
-        val cameraId = getCameraId(facingMode) ?: return
+        val cameraId = getCameraId(facingMode)
+            ?: return report("no ${if (facingMode == CameraFacingMode.FRONT) "front" else "back"} camera on this device")
         imageReader = ImageReader.newInstance(captureWidth, captureHeight, ImageFormat.JPEG, 1)
         try {
             cameraManager.openCamera(cameraId, object : CameraDevice.StateCallback() {
@@ -162,12 +202,26 @@ class CameraView(
                     cameraDevice = camera
                     startPreview(previewSurface)
                 }
-                override fun onDisconnected(camera: CameraDevice) { camera.close(); cameraDevice = null }
-                override fun onError(camera: CameraDevice, error: Int) { camera.close(); cameraDevice = null }
+                override fun onDisconnected(camera: CameraDevice) {
+                    camera.close(); cameraDevice = null
+                    report("the camera was taken by another app")
+                }
+                override fun onError(camera: CameraDevice, error: Int) {
+                    camera.close(); cameraDevice = null
+                    report("the camera could not be opened (error $error)")
+                }
             }, backgroundHandler)
         } catch (e: SecurityException) {
-            // Permission must be granted before using CameraView
+            // The permission is granted before start(): one revoked since lands here.
+            report("The camera permission was denied")
+        } catch (e: Exception) {
+            report("the camera could not be opened")
         }
+    }
+
+    /** A problem to [onError], on the main thread (the camera's callbacks run on its own). */
+    private fun report(message: String) {
+        main.post { if (!didShutdown) onError?.invoke(message) }
     }
 
     private fun startPreview(previewSurface: Surface) {
@@ -187,7 +241,7 @@ class CameraView(
                     captureSession = session
                     session.setRepeatingRequest(previewRequest, null, backgroundHandler)
                 }
-                override fun onConfigureFailed(session: CameraCaptureSession) {}
+                override fun onConfigureFailed(session: CameraCaptureSession) { report("the camera preview could not start") }
             },
             backgroundHandler
         )
@@ -248,6 +302,7 @@ class CameraView(
     }
 
     private fun startBackgroundThread() {
+        if (backgroundThread != null) return
         backgroundThread = HandlerThread("CameraBackground").also { it.start() }
         backgroundHandler = Handler(backgroundThread!!.looper)
     }
@@ -260,4 +315,8 @@ class CameraView(
     }
 
     // endregion
+
+    private companion object {
+        val main by lazy { Handler(Looper.getMainLooper()) }
+    }
 }

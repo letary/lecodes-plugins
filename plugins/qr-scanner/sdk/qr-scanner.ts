@@ -1,5 +1,6 @@
 // QRScanner — the host's camera QR scanner as a view the app opens fullscreen
-// (`await scanner.open()`), pushes (`Router.push(scanner)`) or embeds as a live preview.
+// (`await scanner.open()`) or pushes (`Router.push(scanner)`): a destination, never a child of a
+// screen.
 //
 // Hand-written over the generated wire for two things: `onScan` hands over the decoded string, not
 // the event's payload, and the permission is asked BEFORE the view is presented.

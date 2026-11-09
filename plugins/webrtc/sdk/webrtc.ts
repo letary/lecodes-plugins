@@ -1,8 +1,10 @@
 // The WebRTC API of the browser, over the plugin's wire: RTCPeerConnection, MediaStream,
-// MediaStreamTrack, RTCDataChannel, RTCRtpSender / Receiver / Transceiver, mediaDevices, plus
-// RTCVideoView — the tree node that draws a track (the browser's <video> has no twin in a tree
-// of nodes). Code written against the browser reads the same here; a client of an SFU
-// (mediasoup-client, LiveKit's) runs over these objects.
+// MediaStreamTrack, RTCDataChannel, RTCRtpSender / Receiver / Transceiver, mediaDevices, plus the
+// picture of a track (the browser's <video> has no twin in a tree of nodes) on two surfaces:
+// UIRTCVideoNode (rtcVideoNode.ts, re-exported here), a node of a screen's layout — the call's tiles —
+// and RTCVideoView, the fullscreen picture pushed or opened with widgets over it. Code written
+// against the browser reads the same here; a client of an SFU (mediasoup-client, LiveKit's) runs
+// over these objects.
 //
 // What differs from the browser, because the objects live in the host and a call crosses to it:
 //   - what the browser answers at once from its own memory is a promise here when the host must
@@ -29,6 +31,7 @@ import type {
   SignalingState, TrackInfo, TrackSettings, TransceiverDirection, TransceiverInfo, TransceiverInit, VideoConstraints,
 } from "../contract"
 
+export { UIRTCVideoNode, type UIRTCVideoNodeStyle } from "./rtcVideoNode"
 export type {
   AudioConstraints, AudioOutput, DataChannelInit, DataChannelState, DeviceInfo, Encoding, FacingMode, IceCandidate,
   IceConnectionState, IceGatheringState, IceServer, MediaKind, ObjectFit, OfferOptions, PeerConnectionState,
@@ -704,8 +707,9 @@ export interface RTCVideoViewOptions {
   mirror?: boolean
 }
 
-/** A tree node that draws one video track: embed it among a screen's children (sized by its
- *  styles) or present it fullscreen (`open()`). `track` may change at any time. */
+/** One video track fullscreen: a destination of its own — `Router.push(view)` or `open()`, its
+ *  controls over it as `widgets`. `track` may change at any time. A picture that is a part of a
+ *  screen (a call's tiles) is a `UIRTCVideoNode`. */
 export interface RTCVideoView extends NativeView {
   /** The track drawn; null = black. */
   track: MediaStreamTrack | null
@@ -748,8 +752,9 @@ class RTCVideoViewElement extends RtcVideoBase {
 }
 
 /**
- * Create a video view. `RTCVideoView.isSupported` reports whether this host has the capability —
- * check it before offering the feature (a view no host registered mounts nothing).
+ * Create a fullscreen video view (push it, or open it). `RTCVideoView.isSupported` reports whether
+ * this host has the capability — check it before offering the feature (a view no host registered
+ * shows nothing). A picture inside a screen is `UIRTCVideoNode`.
  */
 // PURE IIFE so an app that never shows a track tree-shakes the view away.
 export const RTCVideoView: {

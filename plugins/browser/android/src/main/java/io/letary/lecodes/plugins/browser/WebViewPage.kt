@@ -1,11 +1,19 @@
 //
 //  WebViewPage.kt — lecodes-plugins/browser
 //
-//  The "webView" view: an android.webkit.WebView the host mounts (fullscreen or among a screen's
-//  children) with the three rules the contract gives a host — a main-frame navigation that starts
-//  with a stop prefix is cancelled and reported, a non-web scheme goes to the system (an `intent:`
-//  URL through its own intent, a bank's app in a checkout) or is dropped, the bridge is installed
-//  only when asked.
+//  The ONE page behind both surfaces of the embedded web view (contract.d.ts), the Kotlin twin of
+//  WebViewPage.swift: the fullscreen view "webView" (WebViewInstance) and the host node "webView"
+//  (WebViewNodeInstance, a box of a screen's layout — LeCodesBrowserPlugin.kt) each wrap a
+//  WebViewPage — an android.webkit.WebView with the three rules the contract gives a host: a
+//  main-frame navigation that starts with a stop prefix is cancelled and reported, a non-web scheme
+//  goes to the system (an `intent:` URL through its own intent, a bank's app in a checkout) or is
+//  dropped, the bridge is installed only when asked. The surfaces differ only in how the page is
+//  made and changed: the View's params are read once, at creation; the node's live props are
+//  `open`, `stops` and `openExternal` below.
+//
+//  The calls are the contract's WebViewMethods, one set for both surfaces: the class is generic over
+//  the surface's generated code enum, whose two codes it is handed (PageCodes). The events go
+//  through the surface's generated events class (PageEventSink).
 //
 //  The stop rule has ONE decision point (`stopAt`) and two hooks into it: shouldOverrideUrlLoading
 //  for what the page navigates to, shouldInterceptRequest for the main-frame requests that hook
@@ -37,17 +45,53 @@ import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.webkit.WebViewCompat
 import androidx.webkit.WebViewFeature
+import io.letary.lecodes.services.PluginCode
 import io.letary.lecodes.services.Reply
 import java.io.ByteArrayInputStream
 import org.json.JSONArray
 import org.json.JSONObject
 import org.json.JSONTokener
 
-class WebViewPage(
+/** The codes the page's calls reject with — the contract's WebViewMethods' two, as the surface's
+ *  generated enum names them. */
+internal class PageCodes<C : PluginCode>(val invalid: C, val failed: C)
+
+/** What the page tells the app — the contract's WebViewEvents: the surface's generated events class. */
+internal interface PageEventSink {
+    fun navigate(url: String)
+    fun load(url: String, title: String)
+    fun error(url: String, message: String)
+    fun stop(url: String)
+    fun message(data: Any)
+    fun exit()
+}
+
+internal fun WebViewEvents.sink(): PageEventSink = object : PageEventSink {
+    override fun navigate(url: String) = this@sink.navigate(url)
+    override fun load(url: String, title: String) = this@sink.load(url, title)
+    override fun error(url: String, message: String) = this@sink.error(url, message)
+    override fun stop(url: String) = this@sink.stop(url)
+    override fun message(data: Any) = this@sink.message(data)
+    override fun exit() = this@sink.exit()
+}
+
+internal fun UIWebViewNodeEvents.sink(): PageEventSink = object : PageEventSink {
+    override fun navigate(url: String) = this@sink.navigate(url)
+    override fun load(url: String, title: String) = this@sink.load(url, title)
+    override fun error(url: String, message: String) = this@sink.error(url, message)
+    override fun stop(url: String) = this@sink.stop(url)
+    override fun message(data: Any) = this@sink.message(data)
+    override fun exit() = this@sink.exit()
+}
+
+/** The page as the View's params (or the node's first props, the same fields) say: the web view's
+ *  settings (`bridge`, `userAgent`, `ephemeral`), the rules, the first page. */
+internal class WebViewPage<C : PluginCode>(
     private val context: Context,
     params: WebViewParams,
-    private val events: WebViewEvents,
-) : WebViewPlugin {
+    private val events: PageEventSink,
+    private val codes: PageCodes<C>,
+) {
 
     private companion object {
         val WEB_SCHEMES = setOf("http", "https", "about", "data", "blob", "file", "javascript")
@@ -56,14 +100,16 @@ class WebViewPage(
 
     private val web = WebView(context)
     private val bridge = params.bridge == true
-    private val openExternal = params.externalLinks != WebViewParamsExternalLinks.BLOCK
+    /** A non-web link goes to the system (`externalLinks: "open"`) or is dropped. Live (the node's). */
+    var openExternal = params.externalLinks != WebViewParamsExternalLinks.BLOCK
     private val ephemeral = params.ephemeral == true
-    /** Read on the network thread too (shouldInterceptRequest). */
-    @Volatile private var stops: List<String> = params.stops ?: emptyList()
+    /** The main-frame URL prefixes that end a flow. Live (the node's prop, `setStops`). Read on the
+     *  network thread too (shouldInterceptRequest). */
+    @Volatile var stops: List<String> = params.stops ?: emptyList()
     /** The bridge goes in at document start (else it is evaluated at page start and finish). */
     private val documentStart = bridge && WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)
 
-    override val view: android.view.View get() = web
+    val view: android.view.View get() = web
 
     private inner class Bridge {
         @JavascriptInterface
@@ -131,7 +177,12 @@ class WebViewPage(
             override fun onCloseWindow(window: WebView) { events.exit() }
         }
 
-        params.url?.let { url -> if (acceptable(url)) web.loadUrl(url) }
+        params.url?.let { open(it) }
+    }
+
+    /** Load `url` as the first page, or as the node's `url` prop written later. */
+    fun open(url: String) {
+        if (acceptable(url)) web.loadUrl(url)
     }
 
     /** THE stop rule: `url` ends the flow — report it; the caller cancels the navigation. */
@@ -159,40 +210,40 @@ class WebViewPage(
         }
     }
 
-    // ---- WebViewPlugin ----
+    // ---- WebViewMethods ----
 
-    override fun load(url: String, headers: Map<String, String>?, reply: Reply<Unit, WebViewCode>) {
-        if (!acceptable(url)) return reply.reject(WebViewCode.INVALID)
+    fun load(url: String, headers: Map<String, String>?, reply: Reply<Unit, C>) {
+        if (!acceptable(url)) return reply.reject(codes.invalid)
         web.loadUrl(url, headers ?: emptyMap())
         reply.resolve(Unit)
     }
 
-    override fun loadHtml(html: String, baseUrl: String?, reply: Reply<Unit, WebViewCode>) {
+    fun loadHtml(html: String, baseUrl: String?, reply: Reply<Unit, C>) {
         web.loadDataWithBaseURL(baseUrl, html, "text/html", "utf-8", null)
         reply.resolve(Unit)
     }
 
-    override fun setStops(stops: List<String>, reply: Reply<Unit, WebViewCode>) {
+    fun setStops(stops: List<String>, reply: Reply<Unit, C>) {
         this.stops = stops
         reply.resolve(Unit)
     }
 
-    override fun reload(reply: Reply<Unit, WebViewCode>) { web.reload(); reply.resolve(Unit) }
-    override fun stopLoading(reply: Reply<Unit, WebViewCode>) { web.stopLoading(); reply.resolve(Unit) }
-    override fun goBack(reply: Reply<Unit, WebViewCode>) { if (web.canGoBack()) web.goBack(); reply.resolve(Unit) }
-    override fun goForward(reply: Reply<Unit, WebViewCode>) { if (web.canGoForward()) web.goForward(); reply.resolve(Unit) }
-    override fun canGoBack(reply: Reply<Boolean, WebViewCode>) { reply.resolve(web.canGoBack()) }
+    fun reload(reply: Reply<Unit, C>) { web.reload(); reply.resolve(Unit) }
+    fun stopLoading(reply: Reply<Unit, C>) { web.stopLoading(); reply.resolve(Unit) }
+    fun goBack(reply: Reply<Unit, C>) { if (web.canGoBack()) web.goBack(); reply.resolve(Unit) }
+    fun goForward(reply: Reply<Unit, C>) { if (web.canGoForward()) web.goForward(); reply.resolve(Unit) }
+    fun canGoBack(reply: Reply<Boolean, C>) { reply.resolve(web.canGoBack()) }
 
-    override fun evaluate(js: String, reply: Reply<Any, WebViewCode>) {
+    fun evaluate(js: String, reply: Reply<Any, C>) {
         web.evaluateJavascript(js) { json ->
             // The result comes as JSON text ("null" for undefined and null); a parse failure is a
             // value the page could not serialize.
             val value = runCatching { JSONTokener(json ?: "null").nextValue() }.getOrNull()
-            if (value == null) reply.reject(WebViewCode.FAILED) else reply.resolve(value)
+            if (value == null) reply.reject(codes.failed) else reply.resolve(value)
         }
     }
 
-    override fun postMessage(data: Any, reply: Reply<Unit, WebViewCode>) {
+    fun postMessage(data: Any, reply: Reply<Unit, C>) {
         val json = when (data) {
             is JSONObject, is JSONArray -> data.toString()
             is String -> JSONObject.quote(data)
@@ -202,12 +253,12 @@ class WebViewPage(
         reply.resolve(Unit)
     }
 
-    override fun clearData(reply: Reply<Unit, WebViewCode>) {
+    fun clearData(reply: Reply<Unit, C>) {
         clear()
         reply.resolve(Unit)
     }
 
-    override fun destroy() {
+    fun destroy() {
         web.stopLoading()
         if (ephemeral) clear()
         web.destroy()

@@ -1,5 +1,5 @@
 // qr-scanner — a camera view that decodes QR codes.
-// A view with events only: the app opens / embeds it and listens.
+// A view with events only: the app opens / pushes it and listens.
 
 import type { View } from "lecodes-sdk/plugin"
 

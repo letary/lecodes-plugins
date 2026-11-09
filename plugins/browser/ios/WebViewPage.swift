@@ -1,35 +1,69 @@
 //
 //  WebViewPage.swift — lecodes-plugins/browser
 //
-//  The "webView" view: a WKWebView the host mounts (fullscreen or among a screen's children) with
-//  the three rules the contract gives a host — a main-frame navigation that starts with a stop
-//  prefix is cancelled and reported, a non-web scheme goes to the system (or is dropped), the
-//  bridge is installed only when asked (a user script disables Apple Pay in the view).
+//  The ONE page behind both surfaces of the embedded web view (contract.d.ts): the fullscreen view
+//  "webView" (WebViewInstance) and the host node "webView" (WebViewNodeInstance, a box of a screen's
+//  layout — BrowserPlugin.swift) each wrap a WebViewPage — a WKWebView with the three rules the
+//  contract gives a host: a main-frame navigation that starts with a stop prefix is cancelled and
+//  reported, a non-web scheme goes to the system (or is dropped), the bridge is installed only when
+//  asked (a user script disables Apple Pay in the view). The surfaces differ only in how the page is
+//  made and changed: the View's params are read once, at creation; the node's live props are
+//  `open`, `stops` and `openExternal` below.
+//
+//  The calls are the contract's WebViewMethods, one set for both surfaces: generic over the
+//  surface's generated code enum (PageCode), so each instance forwards them as they come. The events
+//  go through the surface's generated events struct (PageEventSink).
+//
+//  Threading: WebKit is main-thread-only, and so is every call the app makes.
 //
 
 import UIKit
 import WebKit
 import LeCodes
 
-final class WebViewPage: NSObject, WebViewPlugin, WKNavigationDelegate, WKUIDelegate, WKScriptMessageHandler {
+/// The codes the page's calls reject with — the contract's WebViewMethods, the same for both
+/// surfaces: each surface's generated enum has them as cases.
+protocol PageCode: PluginCode {
+    static var invalid: Self { get }
+    static var failed: Self { get }
+}
+extension WebViewCode: PageCode {}
+extension UIWebViewNodeCode: PageCode {}
+
+/// What the page tells the app — the contract's WebViewEvents: each surface's generated events struct.
+protocol PageEventSink {
+    func navigate(url: String)
+    func load(url: String, title: String)
+    func error(url: String, message: String)
+    func stop(url: String)
+    func message(data: Any)
+    func exit()
+}
+extension WebViewEvents: PageEventSink {}
+extension UIWebViewNodeEvents: PageEventSink {}
+
+final class WebViewPage: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMessageHandler {
 
     private static let webSchemes: Set<String> = ["http", "https", "about", "data", "blob", "file", "javascript"]
     private static let bridgeScript = """
     window.lecodes = { postMessage: function (d) { window.webkit.messageHandlers.lecodes.postMessage(JSON.stringify(d === undefined ? null : d)) }, onMessage: null };
     """
 
-    private let events: WebViewEvents
-    private let webView: WKWebView
+    private let events: PageEventSink
+    let webView: WKWebView
     private let bridge: Bool
-    private let openExternal: Bool
-    private var stops: [String]
+    /// A non-web link goes to the system (`externalLinks: "open"`) or is dropped. Live (the node's).
+    var openExternal: Bool
+    /// The main-frame URL prefixes that end a flow. Live (the node's prop, `setStops`).
+    var stops: [String]
     /// A finished page whose title WebKit has not reported yet (see didFinish).
     private var pendingLoad: (url: String, timeout: DispatchWorkItem)?
     private var titleObservation: NSKeyValueObservation?
 
-    var view: UIView { webView }
-
-    init(_ params: WebViewParams, _ events: WebViewEvents) {
+    /// The page as the View's params (or the node's first props, the same fields) say: the
+    /// configuration WKWebView is made with (`bridge`, `userAgent`, `ephemeral`), the rules, the
+    /// first page.
+    init(_ params: WebViewParams, _ events: PageEventSink) {
         self.events = events
         bridge = params.bridge ?? false
         openExternal = params.externalLinks != .block
@@ -54,12 +88,17 @@ final class WebViewPage: NSObject, WebViewPlugin, WKNavigationDelegate, WKUIDele
             guard let self, self.pendingLoad != nil, !(webView.title ?? "").isEmpty else { return }
             self.flushLoad()
         }
-        if let url = params.url, let target = URL(string: url) { webView.load(URLRequest(url: target)) }
+        if let url = params.url { open(url) }
     }
 
-    // MARK: - WebViewPlugin
+    /// Load `url` as the first page, or as the node's `url` prop written later.
+    func open(_ url: String) {
+        if let target = URL(string: url) { webView.load(URLRequest(url: target)) }
+    }
 
-    func load(_ url: String, _ headers: [String: String]?, _ reply: Reply<Void, WebViewCode>) {
+    // MARK: - WebViewMethods
+
+    func load<C: PageCode>(_ url: String, _ headers: [String: String]?, _ reply: Reply<Void, C>) {
         guard let target = URL(string: url), let scheme = target.scheme?.lowercased(), Self.webSchemes.contains(scheme) else {
             return reply.reject(.invalid)
         }
@@ -69,37 +108,37 @@ final class WebViewPage: NSObject, WebViewPlugin, WKNavigationDelegate, WKUIDele
         reply.resolve()
     }
 
-    func loadHtml(_ html: String, _ baseUrl: String?, _ reply: Reply<Void, WebViewCode>) {
+    func loadHtml<C: PageCode>(_ html: String, _ baseUrl: String?, _ reply: Reply<Void, C>) {
         webView.loadHTMLString(html, baseURL: baseUrl.flatMap(URL.init(string:)))
         reply.resolve()
     }
 
-    func setStops(_ stops: [String], _ reply: Reply<Void, WebViewCode>) {
+    func setStops<C: PageCode>(_ stops: [String], _ reply: Reply<Void, C>) {
         self.stops = stops
         reply.resolve()
     }
 
-    func reload(_ reply: Reply<Void, WebViewCode>) { webView.reload(); reply.resolve() }
-    func stopLoading(_ reply: Reply<Void, WebViewCode>) { webView.stopLoading(); reply.resolve() }
-    func goBack(_ reply: Reply<Void, WebViewCode>) { webView.goBack(); reply.resolve() }
-    func goForward(_ reply: Reply<Void, WebViewCode>) { webView.goForward(); reply.resolve() }
-    func canGoBack(_ reply: Reply<Bool, WebViewCode>) { reply.resolve(webView.canGoBack) }
+    func reload<C: PageCode>(_ reply: Reply<Void, C>) { webView.reload(); reply.resolve() }
+    func stopLoading<C: PageCode>(_ reply: Reply<Void, C>) { webView.stopLoading(); reply.resolve() }
+    func goBack<C: PageCode>(_ reply: Reply<Void, C>) { webView.goBack(); reply.resolve() }
+    func goForward<C: PageCode>(_ reply: Reply<Void, C>) { webView.goForward(); reply.resolve() }
+    func canGoBack<C: PageCode>(_ reply: Reply<Bool, C>) { reply.resolve(webView.canGoBack) }
 
-    func evaluate(_ js: String, _ reply: Reply<Any, WebViewCode>) {
+    func evaluate<C: PageCode>(_ js: String, _ reply: Reply<Any, C>) {
         webView.evaluateJavaScript(js) { result, error in
             if error != nil { return reply.reject(.failed) }
             reply.resolve(result ?? NSNull())
         }
     }
 
-    func postMessage(_ data: Any, _ reply: Reply<Void, WebViewCode>) {
+    func postMessage<C: PageCode>(_ data: Any, _ reply: Reply<Void, C>) {
         guard let bytes = try? JSONSerialization.data(withJSONObject: data, options: [.fragmentsAllowed]),
               let json = String(data: bytes, encoding: .utf8) else { return reply.reject(.failed) }
         webView.evaluateJavaScript("window.lecodes && window.lecodes.onMessage && window.lecodes.onMessage(\(json))") { _, _ in }
         reply.resolve()
     }
 
-    func clearData(_ reply: Reply<Void, WebViewCode>) {
+    func clearData<C: PageCode>(_ reply: Reply<Void, C>) {
         let store = webView.configuration.websiteDataStore
         store.removeData(ofTypes: WKWebsiteDataStore.allWebsiteDataTypes(), modifiedSince: .distantPast) { reply.resolve() }
     }

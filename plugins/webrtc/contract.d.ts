@@ -2,7 +2,11 @@
 // the browser's own stack on the web. The wire is the W3C API, cut at the objects: a peer
 // connection is a SESSION of the "rtcPeerConnection" service (its params are the configuration,
 // the SDK's close() is RTCPeerConnection.close()), the media devices are the "rtcMedia" service,
-// and a track is drawn by the "rtcVideo" view. Tracks, senders, transceivers and data channels
+// and a track is drawn on two surfaces with one set of methods (RtcVideoMethods): the fullscreen
+// VIEW "rtcVideo" (`RTCVideoView`: its own layer, `Router.push`, widgets over it) and the HOST NODE
+// "rtcVideo" (`UIRTCVideoNode`: a box in a screen's layout, docs/plans/host-node-plan.md in core) —
+// on iOS and Android one video class under two thin instances; the web half is the View's only (a
+// host node has none: an empty box there). Tracks, senders, transceivers and data channels
 // live in the host; what crosses is an id the host allocated. A remote track (the `track` event)
 // is a track like any other: the view shows it, another connection can forward it.
 //
@@ -11,9 +15,9 @@
 // client of an SFU (mediasoup-client, LiveKit's) can run in the app's bundle over this wire.
 //
 // The app-facing API (sdk/) is the browser's: RTCPeerConnection, MediaStream, MediaStreamTrack,
-// RTCDataChannel, mediaDevices.getUserMedia(), plus RTCVideoView for the picture.
+// RTCDataChannel, mediaDevices.getUserMedia(), plus UIRTCVideoNode / RTCVideoView for the picture.
 
-import type { Json, Service, View, f64, i32 } from "lecodes-sdk/plugin"
+import type { Json, Service, UIHostNode, View, f64, i32 } from "lecodes-sdk/plugin"
 
 // ---- media ----------------------------------------------------------------------------------------
 
@@ -317,6 +321,7 @@ export interface RtcPeerConnection extends Service<"rtcPeerConnection", RtcConfi
 
 export type ObjectFit = "cover" | "contain"
 
+// The View's params, and the node's props: LIVE there — a write does what the method of its name does.
 export interface RtcVideoParams {
   /** The track to draw; none = black. */
   trackId?: string
@@ -331,10 +336,18 @@ export interface RtcVideoEvents {
   resize: { width: i32, height: i32 }
 }
 
-/** A view drawing one video track, local or remote. */
-export interface RtcVideo extends View<"rtcVideo", RtcVideoParams, RtcVideoEvents> {
+/** The methods of both surfaces: the View's and the node's, one implementation per platform. */
+export interface RtcVideoMethods {
   /** Draw another track; null = black. @rejects notFound */
   setTrack(trackId: string | null): Promise<void>
   setObjectFit(fit: ObjectFit): Promise<void>
   setMirror(mirror: boolean): Promise<void>
 }
+
+/** A view drawing one video track, local or remote. */
+export interface RtcVideo extends View<"rtcVideo", RtcVideoParams, RtcVideoEvents>, RtcVideoMethods {}
+
+/** One video track, local or remote, as a node of the layout: a box in a screen, sized by its
+ *  styles, black where there is no picture; the holder paints the box (radius, border, shadow) over
+ *  it. */
+export interface UIRTCVideo extends UIHostNode<"rtcVideo", RtcVideoParams, RtcVideoEvents>, RtcVideoMethods {}

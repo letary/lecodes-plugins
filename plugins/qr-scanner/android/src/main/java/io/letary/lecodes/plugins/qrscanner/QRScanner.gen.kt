@@ -48,7 +48,7 @@ class QRScannerEvents(private val channel: PluginEmit) {
  * once, now or later.
  */
 interface QRScannerPlugin {
-    /** The view the host mounts: fullscreen, or embedded among a screen's children. */
+    /** The view the host mounts, fullscreen: a View is a destination, never a node of a layout (a node is a UIHostNode). */
     val view: android.view.View
 
     /** The instance goes (the world swapped): release the hardware. */

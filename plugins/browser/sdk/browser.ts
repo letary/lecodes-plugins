@@ -12,26 +12,30 @@
 //
 // It resolves with the return URL reached, or null when the user left. `returnUrl` says what ENDS
 // the page; `embedded` says WHERE it runs — the system sheet (shared logins, passkeys, Apple Pay;
-// the only surface OAuth providers accept) or a WebView presented fullscreen under a bar the SDK
-// draws (an https return without verified app links, a 3DS flow, no system chrome).
+// the only surface OAuth providers accept) or an embedded page in a screen under a bar the SDK draws
+// (an https return without verified app links, a 3DS flow, no system chrome).
 //
 // Hand-written over the generated wire because the flows are the SDK's, not the hosts':
 //   - the sheet's return is ONE of two paths — iOS intercepts the scheme itself and resolves `show`
 //     with the URL, Android and the web deliver the redirect as the app's "url" event. The wrapper
 //     races both and the host does nothing it would not do for a plain deep link;
-//   - the embedded flow is a WebView with the return URLs as its `stops`, inside a screen with a
-//     close bar, pushed through the Router when one is showing and opened directly otherwise.
+//   - the embedded flow is a UIWebViewNode (webViewNode.ts) with the return URLs as its `stops`, at
+//     `flex: 1` in a screen under a close bar, pushed through the Router when one is showing and
+//     opened directly otherwise. A host that draws no such node rejects it — the web among them
+//     until host nodes reach it (host-node-plan phase 8): a View is a destination, never a part of
+//     a screen (7b), so there is no embedded View to fall back on.
 //
-// WebView() is the element itself: embed it among a screen's children, push it with your own
-// chrome, drive it (`load`, `evaluate`, `postMessage`) and listen (`navigate`, `load`, `stop`,
-// `message`).
+// WebView() is the fullscreen page: push it with your own chrome over it (`widgets`), drive it
+// (`load`, `evaluate`, `postMessage`) and listen (`navigate`, `load`, `stop`, `message`). A page
+// that is a part of a screen is a UIWebViewNode.
 
 import {
   Presentable, Router, UIBox, UIButton, UIRow, UIScreen, UIText, theme, _onAppUrl, type Json, type Listener, type NativeView,
 } from "lecodes-sdk/plugin"
 import { BrowserBase, NAME as SHEET_NAME } from "./browser.Browser.gen"
 import { WebViewBase, NAME as VIEW_NAME, supports as viewSupports, type Method as WebViewMethod } from "./browser.WebView.gen"
-import type { WebViewEvents, WebViewParams } from "../contract"
+import { WebViewNodeElement } from "./webViewNode"
+import type { WebViewEvents, WebViewParams, WebViewProps } from "../contract"
 
 export type { WebViewEvents, WebViewParams } from "../contract"
 
@@ -42,8 +46,8 @@ export interface BrowserOpenOptions {
    *  verified links (app.json `appLinks`). Embedded, the view intercepts the navigation itself,
    *  and a verified https return from another app (a bank's) ends the page too. */
   returnUrl?: string | string[]
-  /** Run the page in an embedded WebView under a close bar instead of the system sheet. The
-   *  WebView intercepts any return URL itself, https included. */
+  /** Run the page in an embedded web page (a `UIWebViewNode`) in a screen under a close bar
+   *  instead of the system sheet. The page intercepts any return URL itself, https included. */
   embedded?: boolean
   /** A private session: no cookies shared with the system browser, nothing kept after. */
   ephemeral?: boolean
@@ -53,8 +57,9 @@ export interface BrowserOpenOptions {
   title?: string
 }
 
-/** The embedded page — the element of the "webView" view: embeddable among a screen's children,
- *  presentable (`open()`, `Router.push`), with the page's controls and events. */
+/** The fullscreen page — the element of the "webView" view: presentable (`open()`, `Router.push`)
+ *  with widgets over it, with the page's controls and events. A page that is a part of a screen is
+ *  a `UIWebViewNode`. */
 export interface WebView extends NativeView {
   /** Load `url`, with extra request headers for the first request. Rejects "invalid" for a URL
    *  that is not a web one. */
@@ -92,8 +97,8 @@ const schemeOf = (url: string): string => {
   return m ? m[1]!.toLowerCase() : ""
 }
 
-const unsupported = (what: string, channel: string): Error =>
-  new Error(`${what} isn't available on this host — it needs the "browser" plugin (app.json "plugins"), a registered "${channel}" ${channel === SHEET_NAME ? "service" : "view"}.`)
+const unsupported = (what: string, registered: string): Error =>
+  new Error(`${what} isn't available on this host — it needs the "browser" plugin (app.json "plugins"), a registered ${registered}.`)
 
 // ---- the sheet -------------------------------------------------------------------------------------
 
@@ -101,7 +106,7 @@ let sheet: BrowserBase | null = null
 const service = (): BrowserBase => sheet ??= new BrowserBase()
 
 const openSheet = (url: string, options: BrowserOpenOptions): Promise<string | null> => new Promise((resolve, reject) => {
-  if (!BrowserBase.supports(SHEET_NAME)) return reject(unsupported("Browser.open", SHEET_NAME))
+  if (!BrowserBase.supports(SHEET_NAME)) return reject(unsupported("Browser.open", `"${SHEET_NAME}" service`))
   const stops = returnUrls(options)
   const schemes = new Set(stops.map(schemeOf))
   if (schemes.size > 1) return reject(new Error("Browser.open: every returnUrl must share one scheme — the platform intercepts one."))
@@ -134,11 +139,15 @@ const openSheet = (url: string, options: BrowserOpenOptions): Promise<string | n
 // ---- the embedded page ----------------------------------------------------------------------------
 
 const openEmbedded = (url: string, options: BrowserOpenOptions): Promise<string | null> => new Promise((resolve, reject) => {
-  if (!WebViewBase.supports(VIEW_NAME)) return reject(unsupported("Browser.open({ embedded: true })", VIEW_NAME))
+  // The page is the host node, a box of the screen's layout (iOS, Android). A host that draws no
+  // "webView" node — the web until host-node-plan phase 8 brings host nodes there, desktop, a
+  // headless run — has no page inside a screen at all.
+  if (!WebViewNodeElement.supported) return reject(unsupported("Browser.open({ embedded: true })", `"${VIEW_NAME}" node — the web has none yet (host nodes reach it later): use the sheet there, or push a fullscreen WebView`))
   const stops = returnUrls(options)
-  const params: WebViewParams = { url, stops }
-  if (options.ephemeral) params.ephemeral = true
-  const view = new WebViewBase(params)
+  const props: WebViewProps = { url, stops }
+  if (options.ephemeral) props.ephemeral = true
+  const node = new WebViewNodeElement(props)
+  const page = node.style({ flex: 1 })
 
   const title = UIText(options.title ?? "")
     .style({ flex: 1, fontSize: 16, fontWeight: "600", color: theme.text, textAlign: "center", lineClamp: 1 })
@@ -146,7 +155,7 @@ const openEmbedded = (url: string, options: BrowserOpenOptions): Promise<string 
     .style({ width: 44, height: 44, alignItems: "center", justifyContent: "center" })
   const bar = UIRow(close, title, UIBox().style({ width: 44 }))
     .style({ pt: "safe-top", alignItems: "center", bgColor: theme.surface, borderBottomWidth: 1, borderColor: theme.border })
-  const screen = UIScreen(bar, view.style({ flex: 1 })).style({ bgColor: theme.bg })
+  const screen = UIScreen(bar, page).style({ bgColor: theme.bg })
 
   // Where it goes: onto the Router when its page is what is on screen, else in place of what is —
   // and back to it after.
@@ -172,9 +181,10 @@ const openEmbedded = (url: string, options: BrowserOpenOptions): Promise<string 
     leave()
     resolve(back)
   }
-  view.on("stop", ({ url: back }) => finish(back))
-  view.on("exit", () => finish(null))
-  view.on("load", ({ title: loaded }) => { if (loaded) title.text = loaded })
+  const stopped = ({ url: back }: { url: string }): void => finish(back)
+  const exited = (): void => finish(null)   // the page called window.close()
+  const loaded = ({ title: shown }: { title: string }): void => { if (shown) title.text = shown }
+  node.onStop(stopped).onExit(exited).onLoad(loaded)
   close.onClick(() => finish(null))
   screen.onBack(() => finish(null))
   // Gone by another hand (the back swipe popped it, another destination replaced it): the flow is
@@ -189,14 +199,16 @@ const openEmbedded = (url: string, options: BrowserOpenOptions): Promise<string 
 
 /**
  * Web content inside the app. `Browser.isSupported` reports whether this host registered the
- * system sheet; `WebView.isSupported` the embedded page.
+ * system sheet; `UIWebViewNode.supported` the page inside a screen (what `embedded` builds),
+ * `WebView.isSupported` the fullscreen page.
  */
 // PURE IIFE so an app that never opens a page tree-shakes the whole plugin away.
 export const Browser: {
   /** Whether this host registered the "browser" service — the system sheet. */
   readonly isSupported: boolean
-  /** Open `url`: in the system sheet, or (`embedded`) in a WebView under a close bar. Resolves
-   *  with the return URL reached (`returnUrl`), or null when the user left. */
+  /** Open `url`: in the system sheet, or (`embedded`) in a screen of a close bar over a
+   *  `UIWebViewNode`. Resolves with the return URL reached (`returnUrl`), or null when the user
+   *  left. */
   open(url: string, options?: BrowserOpenOptions): Promise<string | null>
 } = /*#__PURE__*/ (() => {
   const browser = {
@@ -208,10 +220,11 @@ export const Browser: {
 })()
 
 /**
- * Create an embedded page. `WebView.isSupported` reports whether this host has the capability —
- * check it before offering the feature.
+ * Create a fullscreen page (push it, or open it). `WebView.isSupported` reports whether this host
+ * has the capability — check it before offering the feature. A page inside a screen is
+ * `UIWebViewNode`.
  */
-// PURE IIFE so an app that never embeds a page tree-shakes the view away.
+// PURE IIFE so an app that never shows a page tree-shakes the view away.
 export const WebView: {
   (params?: WebViewParams): WebView
   /** Whether this host registered a "webView" view. */

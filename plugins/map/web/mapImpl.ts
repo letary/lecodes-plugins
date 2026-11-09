@@ -1,5 +1,5 @@
 // The maplibre-gl half of the map on the web — loaded lazily by map.ts. It implements the contract's
-// MapViewPlugin (map.gen.ts) and mirrors the iOS half (../ios/MapPlugin.swift + MapLayers.swift)
+// MapViewPlugin (map.gen.ts) and mirrors the iOS half (../ios/MapController.swift + MapLayers.swift)
 // rule for rule.
 //
 // Deliberately NOT here, as on the devices: maplibre's geolocate control (the puck is our own
@@ -121,7 +121,7 @@ export const createMap = (el: HTMLElement, params: MapParams, events: MapViewEve
     }
     return params.style ?? null
   })()
-  if (!style) events.error({ message: "MapView: `style` must be a URL or a style JSON" })
+  if (!style) events.error({ message: "the map has no style: give a URL or a style JSON" })
 
   const map = new MapLibreMap({
     container: el,
@@ -168,7 +168,7 @@ export const createMap = (el: HTMLElement, params: MapParams, events: MapViewEve
   // also reports every missing tile/sprite here — the native halves don't, so neither do we.
   map.on("error", (e) => {
     if (ready) return
-    events.error({ message: e?.error?.message ?? "MapView: failed to load the style" })
+    events.error({ message: e?.error?.message ?? "failed to load the style" })
   })
   map.on("moveend", () => { if (ready) events.moveEnd(cameraPayload()) })
   map.on("resize", () => applyPadding())

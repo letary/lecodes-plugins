@@ -2,11 +2,13 @@
 //  WebRTCPlugin.swift — lecodes-plugins/webrtc
 //
 //  The "rtcMedia" service (the devices), the "rtcPeerConnection" service (a session per
-//  connection) and the "rtcVideo" view (a track drawn), over libwebrtc (the WebRTC package:
-//  Google's build, stasel/WebRTC). The channels themselves — the calls, their arguments, the
-//  events — are RtcMediaPlugin.gen.swift, generated from contract.d.ts.
+//  connection) and the picture of a track on its two surfaces — the "rtcVideo" view (fullscreen) and
+//  the "rtcVideo" host node (a box of a screen's layout), one video class under both
+//  (RtcVideoView.swift) — over libwebrtc (the WebRTC package: Google's build, stasel/WebRTC). The
+//  channels themselves — the calls, their arguments, the props, the events — are
+//  RtcMediaPlugin.gen.swift, generated from contract.d.ts.
 //
-//  What is shared by the three: ONE libwebrtc factory for the process and the registry of the
+//  What is shared by them: ONE libwebrtc factory for the process and the registry of the
 //  tracks by the id the wire names them with (RtcEngine). Signaling is the app's: nothing here
 //  knows a room or a server.
 //
@@ -23,7 +25,8 @@ public enum LeCodesWebRTCPlugin {
     public static func register(in engine: LeCodesEngine) {
         RtcMediaChannel.register(in: engine) { _, events in RtcMediaService(engine.permissions, events) }
         RtcPeerConnectionChannel.register(in: engine) { configuration, events in RtcPeerConnectionSession(configuration, events) }
-        RtcVideoChannel.register(in: engine) { params, events in RtcVideoView(params, events) }
+        RtcVideoChannel.register(in: engine) { params, events in RtcVideoViewInstance(params, events) }
+        UIRTCVideoNodeGlue.register(in: engine) { events in RtcVideoNodeInstance(events) }
     }
 }
 

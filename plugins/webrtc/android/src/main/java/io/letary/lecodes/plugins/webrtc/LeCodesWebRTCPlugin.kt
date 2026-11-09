@@ -2,11 +2,13 @@
 //  LeCodesWebRTCPlugin.kt — lecodes-plugins/webrtc
 //
 //  The "rtcMedia" service (the devices), the "rtcPeerConnection" service (a session per
-//  connection) and the "rtcVideo" view (a track drawn), over libwebrtc (Stream's build of
-//  Google's library: io.getstream:stream-webrtc-android). The channels themselves — the calls,
-//  their arguments, the events — are RtcMediaPlugin.gen.kt, generated from contract.d.ts.
+//  connection) and the picture of a track on its two surfaces — the "rtcVideo" view (fullscreen) and
+//  the "rtcVideo" host node (a box of a screen's layout), one video class under both
+//  (RtcVideoView.kt) — over libwebrtc (Stream's build of Google's library:
+//  io.getstream:stream-webrtc-android). The channels themselves — the calls, their arguments, the
+//  props, the events — are RtcMediaPlugin.gen.kt, generated from contract.d.ts.
 //
-//  What is shared by the three: ONE libwebrtc factory for the process and the registry of the
+//  What is shared by them: ONE libwebrtc factory for the process and the registry of the
 //  tracks by the id the wire names them with (RtcEngine). Signaling is the app's: nothing here
 //  knows a room or a server.
 //
@@ -43,7 +45,8 @@ object LeCodesWebRTCPlugin {
         val appContext = context.applicationContext
         RtcMediaChannel.register(engine) { _, events -> RtcMediaService(engine, appContext, events) }
         RtcPeerConnectionChannel.register(engine) { configuration, events -> RtcPeerConnectionSession(appContext, configuration, events) }
-        RtcVideoChannel.register(engine) { params, events -> RtcVideoView(appContext, params, events) }
+        RtcVideoChannel.register(engine) { params, events -> RtcVideoViewInstance(appContext, params, events) }
+        UIRTCVideoNodeGlue.register(engine) { events -> RtcVideoNodeInstance(appContext, events) }
     }
 }
 

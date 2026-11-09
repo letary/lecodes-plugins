@@ -1,10 +1,10 @@
 //
 //  MapLayers.swift — lecodes-plugins/map
 //
-//  The style-side helpers behind MapViewInstance: default layers for app-created sources (a
-//  colored dot + optional icon + optional label, clusters on request; a line), the user puck
-//  (dot + accuracy halo + heading arrow — our own GeoJSON source, never MapLibre's location
-//  component), and JSON <-> MapLibre conversions.
+//  The style-side helpers behind MapController (the map of both surfaces): default layers for
+//  app-created sources (a colored dot + optional icon + optional label, clusters on request; a
+//  line), the user puck (dot + accuracy halo + heading arrow — our own GeoJSON source, never
+//  MapLibre's location component), and JSON <-> MapLibre conversions.
 //
 //  The LOOK of the defaults is deliberately plain: an app that wants designed markers declares
 //  the source in its style JSON and the plugin only pushes data (`Managed.styleOwned`).
