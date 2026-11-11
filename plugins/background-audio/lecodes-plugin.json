@@ -5,7 +5,15 @@
   "sdk": "^2.0.0",
   "description": "One record that plays on in the background and on the lock screen — an audio guide, a podcast (AVPlayer with the Now Playing center, a media3 session service, the browser's audio element with the Media Session). The app's side is BackgroundAudio.",
   "ios": null,
-  "android": null,
+  "android": {
+    "module": "lecodes-background-audio",
+    "register": "io.letary.lecodes.plugins.backgroundaudio.LeCodesBackgroundAudioPlugin",
+    "dependencies": [
+      "androidx.media3:media3-exoplayer:1.8.0",
+      "androidx.media3:media3-session:1.8.0",
+      "androidx.lifecycle:lifecycle-process:2.9.4"
+    ]
+  },
   "web": {
     "register": "web/background-audio.ts"
   }

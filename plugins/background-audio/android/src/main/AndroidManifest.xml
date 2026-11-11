@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- lecodes-plugins/background-audio: merged into the host app's manifest by the Gradle build. The
+     service the record plays in: a media3 session service, in the foreground while it plays (the
+     system then keeps the process alive with the screen off) under the system's media
+     notification — its title, play / pause. Not exported: only the app's own controller binds it;
+     the system's media controls reach the session through its notification. -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
+    <!-- The player holds the CPU and the network awake while a record plays with the screen off. -->
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+
+    <application>
+        <service
+            android:name="io.letary.lecodes.plugins.backgroundaudio.BackgroundAudioService"
+            android:exported="false"
+            android:foregroundServiceType="mediaPlayback">
+            <intent-filter>
+                <action android:name="androidx.media3.session.MediaSessionService" />
+            </intent-filter>
+        </service>
+    </application>
+
+</manifest>
