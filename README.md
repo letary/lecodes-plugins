@@ -94,6 +94,19 @@ export interface CameraView extends View<"camera", CameraParams, CameraEvents> {
   need depends on its arguments (webrtc's `getUserMedia`) asks by hand through the same service
   (`engine.permissions.ensure`). A view that needs a permission to mount asks in its wrapper
   (`prepareCamera`), through the SDK's `permissions`.
+- `@lazy` on an event of a View or a Service: the half sends it only while the app has a listener
+  of it — for an event that ticks (a position, a level), so that nothing calls into the app when
+  nobody listens. Nothing is written by hand for it. The wrapper's base counts the listeners and
+  tells the half when the first one comes and the last one goes (the wire's own call,
+  `$listen(event, on)`), and again each time the half's instance is made — a service's session
+  opens on its first call, a view's instance lives while it is presented, the listeners outlive
+  both. The generated glue hands that to the plugin as `<event>Observed(observed)`, which starts
+  and stops what produces the event (and sends the value it has, so a new listener is not left
+  waiting for the next tick), keeps `events.<event>Observed` for a half that would rather not
+  build a payload, and drops an event sent while nobody listens. The end of the session (`close`)
+  or of the instance (`destroy`) stops everything without a last `<event>Observed(false)`.
+  Tag an event when it is added: a bundle built before the tag never says it listens, so tagging
+  an event apps already hear takes it from them. A host node's event is not `@lazy`.
 - A contract describes the WIRE. The API an app sees (the wrapper in `sdk/`) may be higher: the
   map's wrapper turns marker items into GeoJSON and queues calls until the style has loaded.
 
