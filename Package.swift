@@ -24,10 +24,10 @@ let package = Package(
         .library(name: "LeCodesCamera", targets: ["LeCodesCamera"]),
         .library(name: "LeCodesGeolocation", targets: ["LeCodesGeolocation"]),
         .library(name: "LeCodesMap", targets: ["LeCodesMap"]),
+        .library(name: "LeCodesNativeUI", targets: ["LeCodesNativeUI"]),
         .library(name: "LeCodesPush", targets: ["LeCodesPush"]),
         .library(name: "LeCodesQRScanner", targets: ["LeCodesQRScanner"]),
         .library(name: "LeCodesSpeech", targets: ["LeCodesSpeech"]),
-        .library(name: "LeCodesTabBar", targets: ["LeCodesTabBar"]),
         .library(name: "LeCodesWebRTC", targets: ["LeCodesWebRTC"]),
     ],
     dependencies: [
@@ -73,6 +73,12 @@ let package = Package(
             dependencies: [.product(name: "LeCodes", package: "lecodes"), .product(name: "MapLibre", package: "maplibre-gl-native-distribution")],
             path: "plugins/map/ios"
         ),
+        // native-ui
+        .target(
+            name: "LeCodesNativeUI",
+            dependencies: [.product(name: "LeCodes", package: "lecodes")],
+            path: "plugins/native-ui/ios"
+        ),
         // push
         .target(
             name: "LeCodesPush",
@@ -90,12 +96,6 @@ let package = Package(
             name: "LeCodesSpeech",
             dependencies: [.product(name: "LeCodes", package: "lecodes")],
             path: "plugins/speech/ios"
-        ),
-        // tabbar
-        .target(
-            name: "LeCodesTabBar",
-            dependencies: [.product(name: "LeCodes", package: "lecodes")],
-            path: "plugins/tabbar/ios"
         ),
         // webrtc
         .target(

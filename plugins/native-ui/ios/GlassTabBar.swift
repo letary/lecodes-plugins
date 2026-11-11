@@ -1,5 +1,5 @@
 //
-//  TabBarPlugin.swift — lecodes-plugins/tabbar
+//  GlassTabBar.swift — lecodes-plugins/native-ui
 //
 //  The host node "tabbar" (contract.d.ts; the glue is GlassTabBarNode.gen.swift): a standalone
 //  UITabBar — on iOS 26 the Liquid Glass capsule with the sliding selection, the press growth and the
@@ -39,16 +39,6 @@
 
 import UIKit
 import LeCodes
-
-public enum LeCodesTabBarPlugin {
-
-    public static let pluginId = "tabbar"
-
-    public static func register(in engine: LeCodesEngine) {
-        guard #available(iOS 26, *) else { return }
-        GlassTabBarNodeGlue.register(in: engine) { events in GlassTabBar(events) }
-    }
-}
 
 /// One tab bar of the app.
 final class GlassTabBar: GlassTabBarNodeInstance {

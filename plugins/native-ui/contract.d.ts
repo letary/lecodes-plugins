@@ -1,8 +1,12 @@
-// tabbar — the system tab bar as a HOST NODE (docs/plans/host-node-plan.md in core): a node of the
-// layout the host draws with the platform's control — on iOS 26+ a standalone UITabBar, the Liquid
-// Glass capsule with its sliding selection, the press growth and the glass under the marker, all
-// UIKit's own. The app keeps the state (the tabs, the selection, the badges: the wrapper in sdk/);
-// the host only translates. No children: the tabs are one prop.
+// native-ui — the platform's own controls as HOST NODES (docs/plans/host-node-plan.md in core): a
+// node of the layout the host draws with the system's control. A control belongs here when it asks
+// nothing of the app's shell: no permission, no Info.plist key, no third-party package — an app
+// that takes one control links the whole module. Anything else is a plugin of its own.
+//
+// The tab bar ("tabbar"): on iOS 26+ a standalone UITabBar, the Liquid Glass capsule with its
+// sliding selection, the press growth and the glass under the marker, all UIKit's own. The app
+// keeps the state (the tabs, the selection, the badges: the wrapper in sdk/tabbar.ts); the host
+// only translates. No children: the tabs are one prop.
 
 import type { UIHostNode, i32 } from "lecodes-sdk/plugin"
 

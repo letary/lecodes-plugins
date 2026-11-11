@@ -3,7 +3,7 @@
 // state — the tabs, the selection, the badges — and the host only translates (contract.d.ts: the
 // host node "tabbar").
 //
-// Hand-written over the generated element (tabbar.gen.ts) for the app's shape of it: the tabs as
+// Hand-written over the generated element (native-ui.gen.ts) for the app's shape of it: the tabs as
 // `defs` (the `defineTabs` shape, a label and an optional icon — the icon's wire spelling is made
 // here), `badge(id, v)` and `select(id)` rewriting the props, `onSelect` with the id and the index,
 // and the theme's tab colors as the default `tintColor` / `color`. Its height is the bar's own: the
@@ -11,7 +11,7 @@
 
 import { TAB_ACTIVE_COLOR, TAB_INACTIVE_COLOR, imageSrcWire, toSrc, type HostNodeElement, type ImageSource } from "lecodes-sdk/plugin"
 import type { TabItem } from "../contract"
-import { GlassTabBarNode, type GlassTabBarNodeStyle } from "./tabbar.gen"
+import { GlassTabBarNode, type GlassTabBarNodeStyle } from "./native-ui.gen"
 
 /** One tab: its label and an optional icon (`assetIcon("lucide:…")`, an image URL / asset). */
 export interface UIGlassTab { label: string, icon?: ImageSource }

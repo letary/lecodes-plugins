@@ -1,0 +1,13 @@
+{
+  "id": "native-ui",
+  "name": "Native UI",
+  "version": "2.0.0",
+  "sdk": "^2.0.0",
+  "description": "The platform's own controls as nodes of the layout. The system tab bar: on iOS 26+ the Liquid Glass UITabBar; the app's side is UIGlassTabBarNode(tabs).",
+  "ios": {
+    "module": "LeCodesNativeUI",
+    "register": "LeCodesNativeUIPlugin"
+  },
+  "android": null,
+  "web": null
+}
