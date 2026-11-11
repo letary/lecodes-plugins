@@ -163,7 +163,10 @@ final class MapController: NSObject, MLNMapViewDelegate {
     func setStyle(url: String?, json: String?) {
         let (source, problem) = Self.styleSource(url: url, json: json)
         ready = false
-        user.release()      // its layers are the old style's
+        // Its layers are the old style's: a camera move while the new one loads (`regionIsChanging`
+        // → `rescale`) must not write to a layer of a style that is gone.
+        user.release()
+        user = MapLayers.UserPuck(visible: { _ in false })
         style = nil
         // The delegate hears the load: a JSON style is parsed at once, inside the setter.
         switch source {

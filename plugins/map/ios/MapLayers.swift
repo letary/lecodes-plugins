@@ -293,8 +293,10 @@ enum MapLayers {
     }
 
     /// Dot + accuracy halo + heading arrow + the wave (`Pulse`) on one GeoJSON source. The halo is in meters, so its
-    /// pixel radius is recomputed as the camera moves (`rescale`).
-    struct UserPuck {
+    /// pixel radius is recomputed as the camera moves (`rescale`). A class: MapLibre calls the delegate
+    /// (`regionIsChanging` → `rescale`) from INSIDE a write to the source while the camera is in flight,
+    /// and a struct's `mutating update` holds the controller's `user` exclusively — Swift traps the read.
+    final class UserPuck {
         static let sourceId = "lecodes-user"
         static let haloId = "lecodes-user-halo"
         static let dotId = "lecodes-user-dot"
@@ -317,7 +319,7 @@ enum MapLayers {
         /// The style or the map goes: the wave's display link stops.
         func release() { pulse?.release() }
 
-        mutating func ensureLayers(in style: MLNStyle) {
+        func ensureLayers(in style: MLNStyle) {
             guard source == nil else { return }
             let source = MLNShapeSource(identifier: Self.sourceId, shape: MLNShapeCollectionFeature(shapes: []), options: nil)
             style.addSource(source)
@@ -360,7 +362,7 @@ enum MapLayers {
             self.pulse = Pulse(layer: wave, visible: visible)
         }
 
-        mutating func update(coordinate: CLLocationCoordinate2D?, accuracy: Double?, heading: Double?, waves: Bool, metersPerPoint: (CLLocationDegrees) -> Double) {
+        func update(coordinate: CLLocationCoordinate2D?, accuracy: Double?, heading: Double?, waves: Bool, metersPerPoint: (CLLocationDegrees) -> Double) {
             self.coordinate = coordinate
             self.accuracy = accuracy
             pulse?.coordinate = coordinate
