@@ -90,7 +90,9 @@ export const register = (host: PluginHost): void => {
     const start = (el: HTMLAudioElement): void => {
       el.play().catch((error: unknown) => {
         if (el !== audio) return
-        set(error instanceof DOMException && error.name === "NotAllowedError" ? "paused" : "failed")
+        const name = error instanceof DOMException ? error.name : ""
+        if (name === "AbortError") return            // paused before it began to play: the `pause` event said so
+        set(name === "NotAllowedError" ? "paused" : "failed")
       })
     }
 
@@ -108,7 +110,7 @@ export const register = (host: PluginHost): void => {
         el.addEventListener("playing", () => set("playing"), { signal })
         // The browser paused it — a headset's button, the notification, another tab's sound — as
         // well as the app: either way it is paused. The end of the record pauses it too.
-        el.addEventListener("pause", () => { if (!el.ended && state === "playing") set("paused") }, { signal })
+        el.addEventListener("pause", () => { if (!el.ended && (state === "playing" || state === "loading")) set("paused") }, { signal })
         el.addEventListener("ended", () => { set("ended"); hide() }, { signal })
         el.addEventListener("error", () => { set("failed"); hide() }, { signal })
         el.addEventListener("seeked", tick, { signal })
