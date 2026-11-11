@@ -178,6 +178,7 @@ export interface CameraView extends View<"camera", CameraParams, CameraEvents> {
 | `audio-recorder` | service | `audioRecorder` | yes: the browser's MediaRecorder (webm/opus, mp4 in Safari) |
 | `speech` | service | `speech` | yes, where the browser has `SpeechRecognition` (Chrome, Safari) |
 | `push` | service | `push` | no |
+| `apple-sign-in` | service | `appleSignIn` | no: iOS only, the system's sheet |
 | `browser` | service + view | `browser`, `webView` | yes: a popup, an iframe (own-origin pages) |
 | `webrtc` | service + view | `rtcMedia`, `rtcPeerConnection`, `rtcVideo` | yes: the browser's own WebRTC |
 | `ar` | service | `ar` | yes: WebXR where Chrome has it (ARCore: hit tests, anchors, QR codes — qr-anchor's wasm), else the camera under the scene, turned by the sensors (no planes, no images) |

@@ -18,6 +18,7 @@ let package = Package(
     name: "lecodes-plugins",
     platforms: [.iOS(.v15)],
     products: [
+        .library(name: "LeCodesAppleSignIn", targets: ["LeCodesAppleSignIn"]),
         .library(name: "LeCodesAR", targets: ["LeCodesAR"]),
         .library(name: "LeCodesAudioRecorder", targets: ["LeCodesAudioRecorder"]),
         .library(name: "LeCodesBackgroundAudio", targets: ["LeCodesBackgroundAudio"]),
@@ -37,6 +38,12 @@ let package = Package(
         .package(url: "https://github.com/stasel/WebRTC", exact: "154.0.0"),
     ],
     targets: [
+        // apple-sign-in
+        .target(
+            name: "LeCodesAppleSignIn",
+            dependencies: [.product(name: "LeCodes", package: "lecodes")],
+            path: "plugins/apple-sign-in/ios"
+        ),
         // ar
         .target(
             name: "LeCodesAR",

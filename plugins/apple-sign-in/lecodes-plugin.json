@@ -1,0 +1,18 @@
+{
+  "id": "apple-sign-in",
+  "name": "Sign in with Apple",
+  "version": "2.0.0",
+  "sdk": "^2.0.0",
+  "description": "Sign in with Apple through the system's own sheet (ASAuthorizationController): Face ID, no browser, no password. Gives the identity token an app's server verifies. iOS only — Apple has no such sheet elsewhere. The app's side is AppleSignIn.",
+  "ios": {
+    "module": "LeCodesAppleSignIn",
+    "register": "LeCodesAppleSignInPlugin",
+    "entitlements": {
+      "com.apple.developer.applesignin": [
+        "Default"
+      ]
+    }
+  },
+  "android": null,
+  "web": null
+}
