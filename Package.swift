@@ -20,6 +20,7 @@ let package = Package(
     products: [
         .library(name: "LeCodesAR", targets: ["LeCodesAR"]),
         .library(name: "LeCodesAudioRecorder", targets: ["LeCodesAudioRecorder"]),
+        .library(name: "LeCodesBackgroundAudio", targets: ["LeCodesBackgroundAudio"]),
         .library(name: "LeCodesBrowser", targets: ["LeCodesBrowser"]),
         .library(name: "LeCodesCamera", targets: ["LeCodesCamera"]),
         .library(name: "LeCodesGeolocation", targets: ["LeCodesGeolocation"]),
@@ -48,6 +49,12 @@ let package = Package(
             name: "LeCodesAudioRecorder",
             dependencies: [.product(name: "LeCodes", package: "lecodes")],
             path: "plugins/audio-recorder/ios"
+        ),
+        // background-audio
+        .target(
+            name: "LeCodesBackgroundAudio",
+            dependencies: [.product(name: "LeCodes", package: "lecodes")],
+            path: "plugins/background-audio/ios"
         ),
         // browser
         .target(
