@@ -2,7 +2,7 @@
 // decoding is the browser's BarcodeDetector. `scan` fires on every change of what is read; its data
 // is null when the code has left the frame for a while — the rule of the native halves.
 //
-// A browser without BarcodeDetector (Safari, Firefox today) registers nothing: `QRScanner.isSupported`
+// A browser without BarcodeDetector (Safari, Firefox today) registers nothing: `QRScanner.supported`
 // is false there, like a shell without the plugin.
 //
 // The channel is the contract's (../contract.d.ts): qr-scanner.gen.ts is generated from it, this

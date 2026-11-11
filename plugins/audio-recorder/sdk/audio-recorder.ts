@@ -25,7 +25,7 @@ export type AudioRecorderEvents = {
 }
 
 /**
- * Records the microphone to a file. `AudioRecorder.isSupported` reports whether this host
+ * Records the microphone to a file. `AudioRecorder.supported` reports whether this host
  * registered the service — check it before showing a record button.
  *
  * ```ts
@@ -37,7 +37,7 @@ export type AudioRecorderEvents = {
  */
 export class AudioRecorder extends Emitter<AudioRecorderEvents> {
   /** Whether this host registered an "audioRecorder" service. */
-  static get isSupported(): boolean { return AudioRecorderBase.supports(NAME) }
+  static get supported(): boolean { return AudioRecorderBase.supports(NAME) }
 
   private _session: AudioRecorderBase | null = null
   private _state: RecorderState = "inactive"
@@ -48,7 +48,7 @@ export class AudioRecorder extends Emitter<AudioRecorderEvents> {
    *  `"failed"` when the recorder could not start, and before touching the host when it is not
    *  supported or a recording is under way. */
   async start(options?: RecordOptions): Promise<void> {
-    if (!AudioRecorder.isSupported) {
+    if (!AudioRecorder.supported) {
       throw new Error('AudioRecorder isn\'t available on this host — it needs a registered "audioRecorder" service.')
     }
     if (this._session) throw new Error("AudioRecorder: a recording is under way — stop() or cancel() it first")

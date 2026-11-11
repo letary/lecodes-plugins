@@ -19,7 +19,7 @@ A capability an app reaches the same way on every platform, through one of three
 | **Host node** | it draws its own pixels in a box of a screen's layout: a map in a card, a preview tile | a node among a screen's children (`UIHostNode`), props, events, no children |
 | **Service** | no pixels: a position, notifications | calls and events |
 
-An app never branches on the platform, only on `isSupported`.
+An app never branches on the platform, only on `supported`.
 
 ## Layout
 

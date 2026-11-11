@@ -165,7 +165,7 @@ const built = /*#__PURE__*/ (() => {
       if (event === "message") announceHandled()
     },
   }
-  Object.defineProperty(push, "isSupported", {
+  Object.defineProperty(push, "supported", {
     get: (): boolean => supported(),
   })
 
@@ -178,7 +178,7 @@ const built = /*#__PURE__*/ (() => {
 })()
 
 /**
- * Remote push notifications. `Push.isSupported` reports whether this host registered the
+ * Remote push notifications. `Push.supported` reports whether this host registered the
  * service — check it before offering notification features.
  *
  * A project with a backend needs none of this: its `pushChannel()` exports are heard with their
@@ -188,7 +188,7 @@ const built = /*#__PURE__*/ (() => {
  */
 export const Push: {
   /** Whether this host registered a "push" service. */
-  readonly isSupported: boolean
+  readonly supported: boolean
   /** Permission + registration state. Never prompts. */
   getStatus(): Promise<PushStatus>
   /** Ask for permission (first time) and register this device → the opaque address your server

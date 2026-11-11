@@ -3,7 +3,7 @@
 // pixel-identical. ONE map (mapImpl.ts `createMap`) behind both surfaces: the fullscreen View's
 // instance and the host node's half (`UIMapNode`, Web Lite's `hostnode` feature).
 //
-// This module is the registration-time half: it stays tiny so `MapView.isSupported` is a synchronous
+// This module is the registration-time half: it stays tiny so `MapView.supported` is a synchronous
 // truth while maplibre-gl (~600 kB) loads lazily, on the first map instance, as its own chunk
 // (mapImpl.ts). A call issued before the library landed waits for it.
 //

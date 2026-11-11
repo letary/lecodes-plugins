@@ -198,14 +198,14 @@ const openEmbedded = (url: string, options: BrowserOpenOptions): Promise<string 
 // ---- the app's side -------------------------------------------------------------------------------
 
 /**
- * Web content inside the app. `Browser.isSupported` reports whether this host registered the
+ * Web content inside the app. `Browser.supported` reports whether this host registered the
  * system sheet; `UIWebViewNode.supported` the page inside a screen (what `embedded` builds),
- * `WebView.isSupported` the fullscreen page.
+ * `WebView.supported` the fullscreen page.
  */
 // PURE IIFE so an app that never opens a page tree-shakes the whole plugin away.
 export const Browser: {
   /** Whether this host registered the "browser" service — the system sheet. */
-  readonly isSupported: boolean
+  readonly supported: boolean
   /** Open `url`: in the system sheet, or (`embedded`) in a screen of a close bar over a
    *  `UIWebViewNode`. Resolves with the return URL reached (`returnUrl`), or null when the user
    *  left. */
@@ -215,12 +215,12 @@ export const Browser: {
     open: (url: string, options: BrowserOpenOptions = {}): Promise<string | null> =>
       options.embedded ? openEmbedded(url, options) : openSheet(url, options),
   }
-  Object.defineProperty(browser, "isSupported", { get: (): boolean => BrowserBase.supports(SHEET_NAME) })
+  Object.defineProperty(browser, "supported", { get: (): boolean => BrowserBase.supports(SHEET_NAME) })
   return browser as any
 })()
 
 /**
- * Create a fullscreen page (push it, or open it). `WebView.isSupported` reports whether this host
+ * Create a fullscreen page (push it, or open it). `WebView.supported` reports whether this host
  * has the capability — check it before offering the feature. A page inside a screen is
  * `UIWebViewNode`.
  */
@@ -228,12 +228,12 @@ export const Browser: {
 export const WebView: {
   (params?: WebViewParams): WebView
   /** Whether this host registered a "webView" view. */
-  readonly isSupported: boolean
+  readonly supported: boolean
   /** Whether the host's half has `method`: false on a host whose half is older than it. */
   supports(method: WebViewMethod): boolean
 } = /*#__PURE__*/ (() => {
   const factory = (params?: WebViewParams): WebView => new WebViewBase(params) as unknown as WebView
-  Object.defineProperty(factory, "isSupported", { get: (): boolean => viewSupports() })
+  Object.defineProperty(factory, "supported", { get: (): boolean => viewSupports() })
   factory.supports = viewSupports
   return factory as any
 })()

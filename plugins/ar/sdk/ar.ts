@@ -257,7 +257,7 @@ class FirstFrame extends System<"arFirstFrame", ARScene> {
 /**
  * A 3D scene over the device camera with world tracking: the session (the "ar" plugin) moves
  * `scene.camera` and draws the camera image behind everything, every frame. Everything of `Scene`
- * applies. `ARScene.isSupported` says whether this host has the plugin.
+ * applies. `ARScene.supported` says whether this host has the plugin.
  *
  * ```ts
  * const scene = new ARScene()
@@ -267,7 +267,7 @@ class FirstFrame extends System<"arFirstFrame", ARScene> {
  */
 export class ARScene extends Scene {
   /** Whether this host registered the "ar" service (the app lists the plugin, the host has a half). */
-  static get isSupported(): boolean { return supports() }
+  static get supported(): boolean { return supports() }
 
   readonly mode: ARMode
   /** Metres between the user and `root` when it is placed (`rootDistance` option, default 1). */
@@ -393,7 +393,7 @@ export class ARScene extends Scene {
     anchor.visible = false
     this.add(anchor)
     // a half older than the codes (contract version 2) has no setCodes, and its start reads no codes
-    if (ARScene.isSupported && !supports("setCodes")) {
+    if (ARScene.supported && !supports("setCodes")) {
       if (!this._codesWarned) console.warn('ARScene: this host\'s "ar" plugin tracks no QR codes (it is older than contract version 2) — their anchors are never tracked')
       this._codesWarned = true
       return anchor
@@ -458,7 +458,7 @@ export class ARScene extends Scene {
   /** @internal Presentable prepare hook (Router.push / replace await it, with the options of the last
    *  `open()`). */
   _prepare(): Promise<void> {
-    if (!ARScene.isSupported) {
+    if (!ARScene.supported) {
       return Promise.reject(new Error('ARScene isn\'t available on this host — it needs the "ar" plugin (app.json "plugins").'))
     }
     if (this._opening) return this._opening                     // one preparation at a time

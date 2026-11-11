@@ -221,7 +221,7 @@ class MediaDevices extends RTCEventTarget {
   ondevicechange: RTCEventListener<RTCEvent<MediaDevices>> | null = null
 
   /** Whether this host registered the "rtcMedia" service — the devices. */
-  get isSupported(): boolean { return RtcMediaBase.supports(MEDIA_NAME) }
+  get supported(): boolean { return RtcMediaBase.supports(MEDIA_NAME) }
 
   /** Capture: asks for the permissions it needs, resolves with a stream of the new tracks. Rejects
    *  with "denied" / "notFound" / "failed". */
@@ -240,7 +240,7 @@ class MediaDevices extends RTCEventTarget {
 }
 
 /** `navigator.mediaDevices` of the browser: the capture and the device list. Host-optional —
- *  `mediaDevices.isSupported` before offering a call. */
+ *  `mediaDevices.supported` before offering a call. */
 // PURE IIFE so an app that never captures tree-shakes the media side away.
 export const mediaDevices: MediaDevices = /*#__PURE__*/ (() => new MediaDevices())()
 
@@ -492,7 +492,7 @@ const descriptionOf = (d: SessionDescription | RTCSessionDescription | { type: S
  *  candidates to the other side — is the app's. */
 export class RTCPeerConnection extends RTCEventTarget {
   /** Whether this host registered the "rtcPeerConnection" service. */
-  static get isSupported(): boolean { return RtcPeerConnectionBase.supports(PC_NAME) }
+  static get supported(): boolean { return RtcPeerConnectionBase.supports(PC_NAME) }
 
   /** @internal The session. */
   readonly _s: RtcPeerConnectionBase
@@ -752,7 +752,7 @@ class RTCVideoViewElement extends RtcVideoBase {
 }
 
 /**
- * Create a fullscreen video view (push it, or open it). `RTCVideoView.isSupported` reports whether
+ * Create a fullscreen video view (push it, or open it). `RTCVideoView.supported` reports whether
  * this host has the capability — check it before offering the feature (a view no host registered
  * shows nothing). A picture inside a screen is `UIRTCVideoNode`.
  */
@@ -760,9 +760,9 @@ class RTCVideoViewElement extends RtcVideoBase {
 export const RTCVideoView: {
   (options?: RTCVideoViewOptions): RTCVideoView
   /** Whether this host registered an "rtcVideo" view. */
-  readonly isSupported: boolean
+  readonly supported: boolean
 } = /*#__PURE__*/ (() => {
   const factory = (options: RTCVideoViewOptions = {}): RTCVideoView => new RTCVideoViewElement(options) as unknown as RTCVideoView
-  Object.defineProperty(factory, "isSupported", { get: (): boolean => RtcVideoBase.supports(VIDEO_NAME) })
+  Object.defineProperty(factory, "supported", { get: (): boolean => RtcVideoBase.supports(VIDEO_NAME) })
   return factory as any
 })()

@@ -106,17 +106,17 @@ export const _styleParams = (options: MapOptions = {}): MapParams => {
 }
 
 /**
- * Create a map view. `MapView.isSupported` reports whether this host registered a "map" view —
+ * Create a map view. `MapView.supported` reports whether this host registered a "map" view —
  * check it before offering the feature.
  */
 // PURE IIFE so an app that never uses the map tree-shakes the whole plugin away.
 export const MapView: {
   (options?: MapOptions): MapView
   /** Whether this host registered a "map" view. */
-  readonly isSupported: boolean
+  readonly supported: boolean
 } = /*#__PURE__*/ (() => {
   const factory = (options: MapOptions = {}): MapView => new MapViewElement(options) as unknown as MapView
-  Object.defineProperty(factory, "isSupported", {
+  Object.defineProperty(factory, "supported", {
     get: (): boolean => ViewChannel.supports(NAME),
   })
   return factory as any

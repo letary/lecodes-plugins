@@ -18,13 +18,13 @@ export interface GeoWatch {
 }
 
 /**
- * The device position. `Geolocation.isSupported` reports whether this host registered the
+ * The device position. `Geolocation.supported` reports whether this host registered the
  * service — check it before offering location features.
  */
 // PURE IIFE so an app that never uses location tree-shakes the whole plugin away.
 export const Geolocation: {
   /** Whether this host registered a "geolocation" service. */
-  readonly isSupported: boolean
+  readonly supported: boolean
   /** One position fix. Prompts for permission on first use; rejects on denial ("denied"), no
    *  provider ("unavailable"), or `options.timeout` elapsing ("timeout"). */
   getCurrent(options?: GeoOptions): Promise<GeoPosition>
@@ -93,7 +93,7 @@ export const Geolocation: {
       }
     },
   }
-  Object.defineProperty(geolocation, "isSupported", {
+  Object.defineProperty(geolocation, "supported", {
     get: (): boolean => GeolocationBase.supports(NAME),
   })
   return geolocation as any

@@ -34,17 +34,17 @@ class QRScannerElement extends QRScannerBase {
 }
 
 /**
- * Create a QR scanner view. `QRScanner.isSupported` reports whether this host can scan at all —
+ * Create a QR scanner view. `QRScanner.supported` reports whether this host can scan at all —
  * check it before offering the feature.
  */
 // PURE IIFE so an app that never scans tree-shakes the whole plugin away.
 export const QRScanner: {
   (): QRScanner
   /** Whether this host registered a "qrScanner" view. */
-  readonly isSupported: boolean
+  readonly supported: boolean
 } = /*#__PURE__*/ (() => {
   const factory = (): QRScanner => new QRScannerElement() as unknown as QRScanner
-  Object.defineProperty(factory, "isSupported", {
+  Object.defineProperty(factory, "supported", {
     get: (): boolean => QRScannerBase.supports(NAME),
   })
   return factory as any

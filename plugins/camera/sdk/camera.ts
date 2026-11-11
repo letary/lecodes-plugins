@@ -39,18 +39,18 @@ class CameraViewElement extends CameraViewBase {
 }
 
 /**
- * Create a camera view (default: the back camera). `CameraView.isSupported` reports whether this
+ * Create a camera view (default: the back camera). `CameraView.supported` reports whether this
  * host has the capability — check it before offering the feature.
  */
 // PURE IIFE so an app that never uses the camera tree-shakes the whole plugin away.
 export const CameraView: {
   (options?: { facingMode?: CameraFacing }): CameraView
   /** Whether this host registered a "camera" view. */
-  readonly isSupported: boolean
+  readonly supported: boolean
 } = /*#__PURE__*/ (() => {
   const factory = (options?: { facingMode?: CameraFacing }): CameraView =>
     new CameraViewElement(options) as unknown as CameraView
-  Object.defineProperty(factory, "isSupported", {
+  Object.defineProperty(factory, "supported", {
     get: (): boolean => CameraViewBase.supports(NAME),
   })
   return factory as any

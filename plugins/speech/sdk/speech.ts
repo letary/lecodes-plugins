@@ -27,7 +27,7 @@ export type SpeechRecognizerEvents = {
 }
 
 /**
- * Recognizes speech from the microphone. `SpeechRecognizer.isSupported` reports whether this host
+ * Recognizes speech from the microphone. `SpeechRecognizer.supported` reports whether this host
  * registered the service — check it before showing a dictation button.
  *
  * ```ts
@@ -39,7 +39,7 @@ export type SpeechRecognizerEvents = {
  */
 export class SpeechRecognizer extends Emitter<SpeechRecognizerEvents> {
   /** Whether this host registered a "speech" service. */
-  static get isSupported(): boolean { return SpeechBase.supports(NAME) }
+  static get supported(): boolean { return SpeechBase.supports(NAME) }
 
   private _session: SpeechBase | null = null
 
@@ -50,7 +50,7 @@ export class SpeechRecognizer extends Emitter<SpeechRecognizerEvents> {
    *  `"unavailable"` when there is no recognizer for the language or on the device, and before
    *  touching the host when the plugin is not there or a listening is under way. */
   async start(options?: SpeechOptions): Promise<void> {
-    if (!SpeechRecognizer.isSupported) {
+    if (!SpeechRecognizer.supported) {
       throw new Error('SpeechRecognizer isn\'t available on this host — it needs a registered "speech" service.')
     }
     if (this._session) throw new Error("SpeechRecognizer: a listening is under way — stop() or abort() it first")
@@ -85,7 +85,7 @@ export class SpeechRecognizer extends Emitter<SpeechRecognizerEvents> {
 
   /** The languages this host recognizes (BCP-47), sorted; empty when it cannot say (the web). */
   static async supportedLanguages(): Promise<string[]> {
-    if (!SpeechRecognizer.isSupported) return []
+    if (!SpeechRecognizer.supported) return []
     const session = new SpeechBase()
     try {
       return await session.supportedLanguages()

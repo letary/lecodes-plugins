@@ -1,5 +1,5 @@
 // speech on the web: the browser's SpeechRecognition (webkitSpeechRecognition in Chrome and Safari;
-// Firefox has none — the plugin does not register there and `isSupported` is false). The browser
+// Firefox has none — the plugin does not register there and `supported` is false). The browser
 // prompts for the microphone itself and reports a refusal as the "not-allowed" error, which arrives
 // as the `denied` error event. `onDevice` is ignored: where the audio goes is the browser's.
 //

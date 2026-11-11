@@ -69,7 +69,7 @@ export class BackgroundAudioBase extends ServiceChannel<BackgroundAudioEvents> {
 
 export type BackgroundAudio = BackgroundAudioBase & {
   /** Whether this host registered the service "backgroundAudio". */
-  readonly isSupported: boolean
+  readonly supported: boolean
   /** Whether the host's half has `method`: false on a host whose half is older than it. */
   supports(method: Method): boolean
 }
@@ -78,7 +78,7 @@ export type BackgroundAudio = BackgroundAudioBase & {
 // life, opened by the first call.
 export const BackgroundAudio: BackgroundAudio = /*#__PURE__*/ (() => {
   const service = new BackgroundAudioBase()
-  Object.defineProperty(service, "isSupported", { get: (): boolean => supports() })
+  Object.defineProperty(service, "supported", { get: (): boolean => supports() })
   Object.defineProperty(service, "supports", { value: supports })
   return service as any
 })()
