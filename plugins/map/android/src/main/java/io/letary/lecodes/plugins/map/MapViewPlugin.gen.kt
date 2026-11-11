@@ -266,7 +266,7 @@ data class MapUserLocationOptions(
     val accuracy: Double? = null,
     /** Degrees clockwise from north — the direction wedge; null hides it. */
     val heading: Double? = null,
-    /** The waves that spread from the dot. Default true. */
+    /** The waves that spread from the dot. Default false: while a wave runs the whole map redraws at the display's rate — a warm phone. */
     val pulse: Boolean? = null,
 ) {
     companion object {

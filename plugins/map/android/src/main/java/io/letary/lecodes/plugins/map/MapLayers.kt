@@ -282,10 +282,15 @@ internal object MapLayers {
 
     /** Dot + accuracy halo + heading arrow + the wave on one GeoJSON source. The halo is in meters,
      *  so its px radius is recomputed as the camera moves (`rescale`). The wave is a circle layer
-     *  whose radius and opacity an animator rewrites: a style has no animation of its own. Each
-     *  write redraws the map, so the wave rests between two runs and while the map is not shown
-     *  (`visible`). */
-    class UserPuck(private val density: Float, private val visible: () -> Boolean) {
+     *  whose radius and opacity an animator rewrites: a style has no animation of its own. It is
+     *  COSTLY, hence off unless the app asks: while a wave runs the whole map redraws at the
+     *  display's rate (a phone at 120 Hz: 90 frames a second and two cores busy, against none at
+     *  rest). Fewer writes do not help — a write to a layer restarts the transition of every paint
+     *  property it has, and three of a circle's (pitch-alignment, pitch-scale, translate-anchor)
+     *  take no transition of their own, so the map redraws for the style's 300 ms after each; the
+     *  radius and opacity as properties of the feature redraw as much. So the wave rests between
+     *  two runs and while it would not be seen (`visible`: the map is shown and the dot is in it). */
+    class UserPuck(private val density: Float, private val visible: (LatLng) -> Boolean) {
         companion object {
             const val SOURCE_ID = "lecodes-user"
             const val HALO_ID = "lecodes-user-halo"
@@ -393,8 +398,9 @@ internal object MapLayers {
                 addUpdateListener { a ->
                     val layer = pulse ?: return@addUpdateListener
                     val t = a.animatedFraction * PULSE_PERIOD_MS / PULSE_WAVE_MS
-                    if (t >= 1f || !visible()) {
-                        // Between two waves, and off screen: nothing is written, the map is not redrawn.
+                    val at = coordinate
+                    if (t >= 1f || at == null || !visible(at)) {
+                        // Between two waves, and out of sight: nothing is written, the map is not redrawn.
                         if (!resting) { resting = true; layer.setProperties(PropertyFactory.circleOpacity(0f)) }
                         return@addUpdateListener
                     }

@@ -70,7 +70,7 @@ final class MapController: NSObject, MLNMapViewDelegate {
     private var managed: [String: MapLayers.Managed] = [:]
     /// The last `setPadding` spec (px numbers or "NN%" strings), re-resolved on layout.
     private var paddingSpec: MapPadding?
-    private var user = MapLayers.UserPuck(visible: { false })      // replaced when the style loads
+    private var user = MapLayers.UserPuck(visible: { _ in false })      // replaced when the style loads
     /// MapLibre's zoom range, what a cleared `minZoom` / `maxZoom` returns to.
     private let defaultZoomRange: (min: Double, max: Double)
 
@@ -237,7 +237,7 @@ final class MapController: NSObject, MLNMapViewDelegate {
     }
 
     func setUserLocation<C: MapCode>(_ lngLat: (Double, Double)?, _ options: MapUserLocationOptions?, _ reply: Reply<Void, C>) {
-        setUserLocation(MapLayers.coordinate(lngLat), accuracy: options?.accuracy, heading: options?.heading, waves: options?.pulse ?? true)
+        setUserLocation(MapLayers.coordinate(lngLat), accuracy: options?.accuracy, heading: options?.heading, waves: options?.pulse ?? false)
         reply.resolve()
     }
 
@@ -383,8 +383,13 @@ final class MapController: NSObject, MLNMapViewDelegate {
         // A style (re)load drops every runtime source/layer — the wrapper re-applies them on `ready`.
         managed.removeAll()
         user.release()
-        // The wave runs only while the map is on screen.
-        user = MapLayers.UserPuck(visible: { [weak mapView] in mapView?.window != nil })
+        // The wave runs only while it is seen: the map on screen and the dot inside it, the wave's
+        // reach around it counted.
+        user = MapLayers.UserPuck(visible: { [weak mapView] at in
+            guard let mapView, mapView.window != nil else { return false }
+            let reach = CGFloat(MapLayers.Pulse.radius)
+            return mapView.bounds.insetBy(dx: -reach, dy: -reach).contains(mapView.convert(at, toPointTo: mapView))
+        })
         ready = true
         loadedOnce = true
         events.ready()

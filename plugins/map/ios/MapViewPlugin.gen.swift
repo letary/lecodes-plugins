@@ -399,7 +399,7 @@ public struct MapUserLocationOptions {
     public var accuracy: Double?
     /// Degrees clockwise from north — the direction wedge; null hides it.
     public var heading: Double?
-    /// The waves that spread from the dot. Default true.
+    /// The waves that spread from the dot. Default false: while a wave runs the whole map redraws at the display's rate — a warm phone.
     public var pulse: Bool?
 
     public init(accuracy: Double? = nil, heading: Double? = nil, pulse: Bool? = nil) {

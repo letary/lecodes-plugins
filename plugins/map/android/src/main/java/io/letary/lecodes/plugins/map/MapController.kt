@@ -93,8 +93,17 @@ internal class MapController<C : PluginCode>(
     private var paddingSpec: MapPadding? = null
     private var user = newPuck()
 
-    /** The wave runs only while the map is on screen: not under another destination, not in a stopped activity. */
-    private fun newPuck() = MapLayers.UserPuck(density) { mapView.isShown }
+    /** The wave runs only while it is seen: the map on screen (not under another destination, not in
+     *  a stopped activity) and the dot inside it, the wave's reach around it counted. */
+    private fun newPuck() = MapLayers.UserPuck(density) { at ->
+        val map = map
+        if (map == null || !mapView.isShown) false
+        else {
+            val point = map.projection.toScreenLocation(at)
+            val reach = MapLayers.UserPuck.PULSE_RADIUS * density
+            point.x > -reach && point.y > -reach && point.x < mapView.width + reach && point.y < mapView.height + reach
+        }
+    }
 
     private companion object {
         /** What the map shows when the app gave no usable style (an `error` event follows). */
@@ -261,7 +270,7 @@ internal class MapController<C : PluginCode>(
     }
 
     fun setUserLocation(lngLat: Pair<Double, Double>?, options: MapUserLocationOptions?, reply: Reply<Unit, C>) {
-        setUserLocation(MapLayers.coordinate(lngLat), options?.accuracy, options?.heading, options?.pulse ?: true)
+        setUserLocation(MapLayers.coordinate(lngLat), options?.accuracy, options?.heading, options?.pulse ?: false)
         reply.resolve()
     }
 

@@ -415,7 +415,7 @@ export interface MapUserLocationOptions {
   accuracy?: number
   /** Degrees clockwise from north — the direction wedge; null hides it. */
   heading?: number
-  /** The waves that spread from the dot. Default true. */
+  /** The waves that spread from the dot. Default false: while a wave runs the whole map redraws at the display's rate — a warm phone. */
   pulse?: boolean
 }
 const readMapUserLocationOptions = (v: unknown): MapUserLocationOptions | undefined => {

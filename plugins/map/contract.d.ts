@@ -120,7 +120,7 @@ export interface MapUserLocationOptions {
   accuracy?: f64 | null
   /** Degrees clockwise from north — the direction wedge; null hides it. */
   heading?: f64 | null
-  /** The waves that spread from the dot. Default true. */
+  /** The waves that spread from the dot. Default false: while a wave runs the whole map redraws at the display's rate — a warm phone. */
   pulse?: boolean
 }
 

@@ -232,8 +232,10 @@ enum MapLayers {
     // MARK: - User puck
 
     /// The wave that spreads from the dot: a circle layer whose radius and opacity a display link
-    /// rewrites — a style has no animation of its own. Each write redraws the map, so the wave rests
-    /// between two runs and while the map is not shown (`visible`). The link holds its target:
+    /// rewrites — a style has no animation of its own. It is COSTLY, hence off unless the app asks:
+    /// while a wave runs the whole map redraws at the display's rate (see the Android half: fewer
+    /// writes do not help). So the wave rests between two runs and while it would not be seen
+    /// (`visible`: the map is shown and the dot is in it). The link holds its target:
     /// `release()` (or `stop()`) must be called before the pulse is dropped.
     final class Pulse: NSObject {
         static let dotRadius = 7.0
@@ -244,12 +246,14 @@ enum MapLayers {
         static let wave = 1.6
         static let period = 2.6
 
+        /// Where the dot is: what `visible` is asked about.
+        var coordinate: CLLocationCoordinate2D?
         private let layer: MLNCircleStyleLayer
-        private let visible: () -> Bool
+        private let visible: (CLLocationCoordinate2D) -> Bool
         private var link: CADisplayLink?
         private var resting = false
 
-        init(layer: MLNCircleStyleLayer, visible: @escaping () -> Bool) {
+        init(layer: MLNCircleStyleLayer, visible: @escaping (CLLocationCoordinate2D) -> Bool) {
             self.layer = layer
             self.visible = visible
         }
@@ -276,8 +280,8 @@ enum MapLayers {
 
         @objc private func tick(_ link: CADisplayLink) {
             let t = link.timestamp.truncatingRemainder(dividingBy: Self.period) / Self.wave
-            if t >= 1 || !visible() {
-                // Between two waves, and off screen: nothing is written, the map is not redrawn.
+            guard t < 1, let coordinate, visible(coordinate) else {
+                // Between two waves, and out of sight: nothing is written, the map is not redrawn.
                 if !resting { resting = true; layer.circleOpacity = NSExpression(forConstantValue: 0) }
                 return
             }
@@ -301,14 +305,14 @@ enum MapLayers {
         private var source: MLNShapeSource?
         private var halo: MLNCircleStyleLayer?
         private var pulse: Pulse?
-        private let visible: () -> Bool
+        private let visible: (CLLocationCoordinate2D) -> Bool
         private var coordinate: CLLocationCoordinate2D?
         private var accuracy: Double?
 
         /// App layers are inserted below this so the puck stays on top.
         var bottomLayerId: String? { source == nil ? nil : Self.haloId }
 
-        init(visible: @escaping () -> Bool) { self.visible = visible }
+        init(visible: @escaping (CLLocationCoordinate2D) -> Bool) { self.visible = visible }
 
         /// The style or the map goes: the wave's display link stops.
         func release() { pulse?.release() }
@@ -359,6 +363,7 @@ enum MapLayers {
         mutating func update(coordinate: CLLocationCoordinate2D?, accuracy: Double?, heading: Double?, waves: Bool, metersPerPoint: (CLLocationDegrees) -> Double) {
             self.coordinate = coordinate
             self.accuracy = accuracy
+            pulse?.coordinate = coordinate
             guard let source else { return }
             guard let coordinate else {
                 pulse?.stop()
