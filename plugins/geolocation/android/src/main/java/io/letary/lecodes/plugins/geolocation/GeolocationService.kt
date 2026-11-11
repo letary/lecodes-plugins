@@ -18,6 +18,7 @@ import android.os.Bundle
 import android.os.CancellationSignal
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import androidx.core.content.ContextCompat
 import io.letary.lecodes.services.Reply
 import io.letary.lecodes.services.resolve
@@ -30,7 +31,11 @@ class GeolocationService(
     private val manager = appContext.getSystemService(Context.LOCATION_SERVICE) as LocationManager
     private val mainHandler = Handler(Looper.getMainLooper())
 
-    private var watchListener: LocationListener? = null
+    /** The watch's listeners, one per provider it follows. */
+    private var watchListeners: List<LocationListener> = emptyList()
+    /** The fix the watch sent last, and whether the satellites gave it. */
+    private var sent: Location? = null
+    private var sentByGps = false
 
     override fun close() = stopWatch()
 
@@ -71,18 +76,23 @@ class GeolocationService(
 
     override fun startWatch(options: GeoOptions?, reply: Reply<Unit, GeolocationCode>) {
         run {
-            if (watchListener != null) return reply.resolve()   // already watching
-            val provider = pickProvider(options?.highAccuracy ?: false)
-                ?: return reply.reject(GeolocationCode.UNAVAILABLE)
-            val listener = LocationListener { location -> events.position(position(location)) }
-            try {
-                @SuppressLint("MissingPermission")
-                manager.requestLocationUpdates(provider, WATCH_INTERVAL_MS, 0f, listener, Looper.getMainLooper())
-                watchListener = listener
-                reply.resolve()
-            } catch (e: Exception) {
-                reply.reject(GeolocationCode.UNAVAILABLE)
+            if (watchListeners.isNotEmpty()) return reply.resolve()   // already watching
+            val providers = watchProviders(options?.highAccuracy ?: false)
+            sent = null
+            sentByGps = false
+            val started = providers.mapNotNull { provider ->
+                val listener = LocationListener { location -> watched(location) }
+                try {
+                    @SuppressLint("MissingPermission")
+                    manager.requestLocationUpdates(provider, WATCH_INTERVAL_MS, 0f, listener, Looper.getMainLooper())
+                    listener
+                } catch (e: Exception) {
+                    null
+                }
             }
+            if (started.isEmpty()) return reply.reject(GeolocationCode.UNAVAILABLE)
+            watchListeners = started
+            reply.resolve()
         }
     }
 
@@ -92,11 +102,41 @@ class GeolocationService(
     }
 
     private fun stopWatch() {
-        watchListener?.let { manager.removeUpdates(it) }
-        watchListener = null
+        for (listener in watchListeners) manager.removeUpdates(listener)
+        watchListeners = emptyList()
+    }
+
+    /**
+     * A fix of the watch. A precise watch follows the satellites AND the network: the network
+     * answers in a second or two, also indoors, the satellites take their time and then are the
+     * better ones. So a satellite fix always goes to the app, a network fix only while no fresh
+     * satellite fix stands — before the first one, and once they stop coming.
+     */
+    private fun watched(location: Location) {
+        val byGps = location.provider == LocationManager.GPS_PROVIDER
+        val last = sent
+        if (!byGps && sentByGps && last != null) {
+            val ageMs = (SystemClock.elapsedRealtimeNanos() - last.elapsedRealtimeNanos) / 1_000_000
+            if (ageMs < GPS_FRESH_MS) return
+        }
+        sent = location
+        sentByGps = byGps
+        events.position(position(location))
     }
 
     // ── plumbing ─────────────────────────────────────────────────────────────
+
+    private fun enabled(provider: String) = runCatching { manager.isProviderEnabled(provider) }.getOrDefault(false)
+
+    /** What a watch follows: one provider, or for a precise watch the satellites beside the network (`watched`). */
+    private fun watchProviders(highAccuracy: Boolean): List<String> {
+        if (highAccuracy) {
+            val coarse = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) LocationManager.FUSED_PROVIDER else LocationManager.NETWORK_PROVIDER
+            val both = listOf(LocationManager.GPS_PROVIDER, coarse).filter { enabled(it) }
+            if (both.isNotEmpty()) return both
+        }
+        return listOfNotNull(pickProvider(highAccuracy))
+    }
 
     private fun pickProvider(highAccuracy: Boolean): String? {
         val preferred =
@@ -104,7 +144,7 @@ class GeolocationService(
             else if (highAccuracy) LocationManager.GPS_PROVIDER
             else LocationManager.NETWORK_PROVIDER
         val fallbacks = listOf(preferred, LocationManager.GPS_PROVIDER, LocationManager.NETWORK_PROVIDER, LocationManager.PASSIVE_PROVIDER)
-        return fallbacks.firstOrNull { runCatching { manager.isProviderEnabled(it) }.getOrDefault(false) }
+        return fallbacks.firstOrNull { enabled(it) }
     }
 
     @SuppressLint("MissingPermission")
@@ -138,5 +178,9 @@ class GeolocationService(
         timestamp = location.time.toDouble(),
     )
 
-    companion object { private const val WATCH_INTERVAL_MS = 1000L }
+    companion object {
+        private const val WATCH_INTERVAL_MS = 1000L
+        /** How long a satellite fix stands before a network fix may replace it. */
+        private const val GPS_FRESH_MS = 10_000L
+    }
 }

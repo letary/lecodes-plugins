@@ -399,10 +399,13 @@ public struct MapUserLocationOptions {
     public var accuracy: Double?
     /// Degrees clockwise from north — the direction wedge; null hides it.
     public var heading: Double?
+    /// The waves that spread from the dot. Default true.
+    public var pulse: Bool?
 
-    public init(accuracy: Double? = nil, heading: Double? = nil) {
+    public init(accuracy: Double? = nil, heading: Double? = nil, pulse: Bool? = nil) {
         self.accuracy = accuracy
         self.heading = heading
+        self.pulse = pulse
     }
 
     init?(wire: WireIn) {
@@ -420,6 +423,13 @@ public struct MapUserLocationOptions {
             self.heading = v
         } else {
             self.heading = nil
+        }
+        let m2 = wire["pulse", 2]
+        if m2.isPresent {
+            guard let v = m2.bool else { return nil }
+            self.pulse = v
+        } else {
+            self.pulse = nil
         }
     }
 }

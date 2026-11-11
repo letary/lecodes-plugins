@@ -70,7 +70,7 @@ final class MapController: NSObject, MLNMapViewDelegate {
     private var managed: [String: MapLayers.Managed] = [:]
     /// The last `setPadding` spec (px numbers or "NN%" strings), re-resolved on layout.
     private var paddingSpec: MapPadding?
-    private var user = MapLayers.UserPuck()
+    private var user = MapLayers.UserPuck(visible: { false })      // replaced when the style loads
     /// MapLibre's zoom range, what a cleared `minZoom` / `maxZoom` returns to.
     private let defaultZoomRange: (min: Double, max: Double)
 
@@ -149,6 +149,7 @@ final class MapController: NSObject, MLNMapViewDelegate {
     }
 
     func destroy() {
+        user.release()
         mapView.delegate = nil
         mapView.onLayout = nil
         mapView.removeFromSuperview()
@@ -162,6 +163,7 @@ final class MapController: NSObject, MLNMapViewDelegate {
     func setStyle(url: String?, json: String?) {
         let (source, problem) = Self.styleSource(url: url, json: json)
         ready = false
+        user.release()      // its layers are the old style's
         style = nil
         // The delegate hears the load: a JSON style is parsed at once, inside the setter.
         switch source {
@@ -235,7 +237,7 @@ final class MapController: NSObject, MLNMapViewDelegate {
     }
 
     func setUserLocation<C: MapCode>(_ lngLat: (Double, Double)?, _ options: MapUserLocationOptions?, _ reply: Reply<Void, C>) {
-        setUserLocation(MapLayers.coordinate(lngLat), accuracy: options?.accuracy, heading: options?.heading)
+        setUserLocation(MapLayers.coordinate(lngLat), accuracy: options?.accuracy, heading: options?.heading, waves: options?.pulse ?? true)
         reply.resolve()
     }
 
@@ -350,10 +352,10 @@ final class MapController: NSObject, MLNMapViewDelegate {
 
     // MARK: - User puck
 
-    private func setUserLocation(_ coordinate: CLLocationCoordinate2D?, accuracy: Double?, heading: Double?) {
+    private func setUserLocation(_ coordinate: CLLocationCoordinate2D?, accuracy: Double?, heading: Double?, waves: Bool) {
         guard let style else { return }
         user.ensureLayers(in: style)
-        user.update(coordinate: coordinate, accuracy: accuracy, heading: heading, metersPerPoint: metersPerPoint)
+        user.update(coordinate: coordinate, accuracy: accuracy, heading: heading, waves: waves, metersPerPoint: metersPerPoint)
     }
 
     private func metersPerPoint(_ latitude: CLLocationDegrees) -> Double {
@@ -380,7 +382,9 @@ final class MapController: NSObject, MLNMapViewDelegate {
         self.style = style
         // A style (re)load drops every runtime source/layer — the wrapper re-applies them on `ready`.
         managed.removeAll()
-        user = MapLayers.UserPuck()
+        user.release()
+        // The wave runs only while the map is on screen.
+        user = MapLayers.UserPuck(visible: { [weak mapView] in mapView?.window != nil })
         ready = true
         loadedOnce = true
         events.ready()

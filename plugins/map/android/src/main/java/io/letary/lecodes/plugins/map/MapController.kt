@@ -91,7 +91,10 @@ internal class MapController<C : PluginCode>(
     private val managed = mutableMapOf<String, MapLayers.Managed>()
     /** The last `setPadding` spec (dp numbers or "NN%" strings), re-resolved on layout. */
     private var paddingSpec: MapPadding? = null
-    private var user = MapLayers.UserPuck(density)
+    private var user = newPuck()
+
+    /** The wave runs only while the map is on screen: not under another destination, not in a stopped activity. */
+    private fun newPuck() = MapLayers.UserPuck(density) { mapView.isShown }
 
     private companion object {
         /** What the map shows when the app gave no usable style (an `error` event follows). */
@@ -170,6 +173,7 @@ internal class MapController<C : PluginCode>(
     }
 
     fun destroy() {
+        user.release()
         style = null
         map = null
         whenMap.clear()
@@ -190,6 +194,7 @@ internal class MapController<C : PluginCode>(
      *  the previous style throws once a newer one loads: it is dropped now. */
     fun setStyle(url: String?, json: String?) {
         val (builder, problem) = styleSource(url, json)
+        user.release()      // its layers are the old style's
         style = null
         styleBuilder = builder
         map?.setStyle(builder) { s -> styleLoaded(s) }   // before the map exists: getMapAsync loads it
@@ -256,7 +261,7 @@ internal class MapController<C : PluginCode>(
     }
 
     fun setUserLocation(lngLat: Pair<Double, Double>?, options: MapUserLocationOptions?, reply: Reply<Unit, C>) {
-        setUserLocation(MapLayers.coordinate(lngLat), options?.accuracy, options?.heading)
+        setUserLocation(MapLayers.coordinate(lngLat), options?.accuracy, options?.heading, options?.pulse ?: true)
         reply.resolve()
     }
 
@@ -368,11 +373,11 @@ internal class MapController<C : PluginCode>(
 
     // ---- user puck --------------------------------------------------------------------------
 
-    private fun setUserLocation(coordinate: LatLng?, accuracy: Double?, heading: Double?) {
+    private fun setUserLocation(coordinate: LatLng?, accuracy: Double?, heading: Double?, waves: Boolean) {
         val s = style ?: return
         val m = map ?: return
         user.ensureLayers(s)
-        user.update(coordinate, accuracy, heading, m)
+        user.update(coordinate, accuracy, heading, waves, m)
     }
 
     // ---- style lifecycle --------------------------------------------------------------------
@@ -381,7 +386,8 @@ internal class MapController<C : PluginCode>(
         style = s
         // A style (re)load drops every runtime source/layer — the wrapper re-applies them on `ready`.
         managed.clear()
-        user = MapLayers.UserPuck(density)
+        user.release()
+        user = newPuck()
         loadedOnce = true
         events.ready()
     }

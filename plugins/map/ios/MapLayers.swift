@@ -231,22 +231,87 @@ enum MapLayers {
 
     // MARK: - User puck
 
-    /// Dot + accuracy halo + heading arrow on one GeoJSON source. The halo is in meters, so its
+    /// The wave that spreads from the dot: a circle layer whose radius and opacity a display link
+    /// rewrites — a style has no animation of its own. Each write redraws the map, so the wave rests
+    /// between two runs and while the map is not shown (`visible`). The link holds its target:
+    /// `release()` (or `stop()`) must be called before the pulse is dropped.
+    final class Pulse: NSObject {
+        static let dotRadius = 7.0
+        /// How far the wave spreads, pt.
+        static let radius = 36.0
+        static let opacity = 0.35
+        /// A wave runs for `wave` seconds, one every `period`.
+        static let wave = 1.6
+        static let period = 2.6
+
+        private let layer: MLNCircleStyleLayer
+        private let visible: () -> Bool
+        private var link: CADisplayLink?
+        private var resting = false
+
+        init(layer: MLNCircleStyleLayer, visible: @escaping () -> Bool) {
+            self.layer = layer
+            self.visible = visible
+        }
+
+        func start() {
+            guard link == nil, !UIAccessibility.isReduceMotionEnabled else { return }
+            resting = false
+            let link = CADisplayLink(target: self, selector: #selector(tick(_:)))
+            link.add(to: .main, forMode: .common)
+            self.link = link
+        }
+
+        func stop() {
+            guard link != nil else { return }
+            release()
+            layer.circleOpacity = NSExpression(forConstantValue: 0)
+        }
+
+        /// The style or the map goes: the link stops, the layer (the old style's) is not touched.
+        func release() {
+            link?.invalidate()
+            link = nil
+        }
+
+        @objc private func tick(_ link: CADisplayLink) {
+            let t = link.timestamp.truncatingRemainder(dividingBy: Self.period) / Self.wave
+            if t >= 1 || !visible() {
+                // Between two waves, and off screen: nothing is written, the map is not redrawn.
+                if !resting { resting = true; layer.circleOpacity = NSExpression(forConstantValue: 0) }
+                return
+            }
+            resting = false
+            let spread = 1 - (1 - t) * (1 - t)      // fast first, slowing as it fades
+            layer.circleRadius = NSExpression(forConstantValue: Self.dotRadius + (Self.radius - Self.dotRadius) * spread)
+            layer.circleOpacity = NSExpression(forConstantValue: Self.opacity * (1 - t))
+        }
+    }
+
+    /// Dot + accuracy halo + heading arrow + the wave (`Pulse`) on one GeoJSON source. The halo is in meters, so its
     /// pixel radius is recomputed as the camera moves (`rescale`).
     struct UserPuck {
         static let sourceId = "lecodes-user"
         static let haloId = "lecodes-user-halo"
         static let dotId = "lecodes-user-dot"
+        static let pulseId = "lecodes-user-pulse"
         static let headingId = "lecodes-user-heading"
         static let headingImage = "lecodes-user-heading"
 
         private var source: MLNShapeSource?
         private var halo: MLNCircleStyleLayer?
+        private var pulse: Pulse?
+        private let visible: () -> Bool
         private var coordinate: CLLocationCoordinate2D?
         private var accuracy: Double?
 
         /// App layers are inserted below this so the puck stays on top.
         var bottomLayerId: String? { source == nil ? nil : Self.haloId }
+
+        init(visible: @escaping () -> Bool) { self.visible = visible }
+
+        /// The style or the map goes: the wave's display link stops.
+        func release() { pulse?.release() }
 
         mutating func ensureLayers(in style: MLNStyle) {
             guard source == nil else { return }
@@ -260,6 +325,16 @@ enum MapLayers {
             halo.circlePitchAlignment = NSExpression(forConstantValue: "map")
             style.addLayer(halo)
 
+            let wave = MLNCircleStyleLayer(identifier: Self.pulseId, source: source)
+            wave.circleColor = NSExpression(forConstantValue: UIColor(red: 0.1, green: 0.5, blue: 1, alpha: 1))
+            wave.circleRadius = NSExpression(forConstantValue: Pulse.dotRadius)
+            wave.circleOpacity = NSExpression(forConstantValue: 0)
+            // Every value written is the frame's own: a paint property's default 300 ms transition
+            // would trail behind the display link (the new wave shown at the old one's size).
+            wave.circleRadiusTransition = MLNTransition(duration: 0, delay: 0)
+            wave.circleOpacityTransition = MLNTransition(duration: 0, delay: 0)
+            style.addLayer(wave)
+
             let heading = MLNSymbolStyleLayer(identifier: Self.headingId, source: source)
             heading.iconImageName = NSExpression(forConstantValue: Self.headingImage)
             heading.iconRotation = NSExpression(forKeyPath: "heading")
@@ -270,7 +345,7 @@ enum MapLayers {
             style.addLayer(heading)
 
             let dot = MLNCircleStyleLayer(identifier: Self.dotId, source: source)
-            dot.circleRadius = NSExpression(forConstantValue: 7)
+            dot.circleRadius = NSExpression(forConstantValue: Pulse.dotRadius)
             dot.circleColor = NSExpression(forConstantValue: UIColor(red: 0.1, green: 0.5, blue: 1, alpha: 1))
             dot.circleStrokeColor = NSExpression(forConstantValue: UIColor.white)
             dot.circleStrokeWidth = NSExpression(forConstantValue: 2.5)
@@ -278,16 +353,19 @@ enum MapLayers {
 
             self.source = source
             self.halo = halo
+            self.pulse = Pulse(layer: wave, visible: visible)
         }
 
-        mutating func update(coordinate: CLLocationCoordinate2D?, accuracy: Double?, heading: Double?, metersPerPoint: (CLLocationDegrees) -> Double) {
+        mutating func update(coordinate: CLLocationCoordinate2D?, accuracy: Double?, heading: Double?, waves: Bool, metersPerPoint: (CLLocationDegrees) -> Double) {
             self.coordinate = coordinate
             self.accuracy = accuracy
             guard let source else { return }
             guard let coordinate else {
+                pulse?.stop()
                 source.shape = MLNShapeCollectionFeature(shapes: [])
                 return
             }
+            if waves { pulse?.start() } else { pulse?.stop() }
             let point = MLNPointFeature()
             point.coordinate = coordinate
             if let heading { point.attributes = ["heading": heading] }

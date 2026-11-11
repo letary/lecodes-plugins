@@ -14,12 +14,15 @@
 
 package io.letary.lecodes.plugins.map
 
+import android.animation.ValueAnimator
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.Path
+import android.os.Build
 import android.util.DisplayMetrics
+import android.view.animation.LinearInterpolator
 import com.google.gson.JsonPrimitive
 import org.json.JSONObject
 import org.maplibre.android.geometry.LatLng
@@ -37,6 +40,7 @@ import org.maplibre.android.style.layers.Property
 import org.maplibre.android.style.layers.PropertyFactory
 import org.maplibre.android.style.layers.RasterLayer
 import org.maplibre.android.style.layers.SymbolLayer
+import org.maplibre.android.style.layers.TransitionOptions
 import org.maplibre.android.style.sources.GeoJsonOptions
 import org.maplibre.android.style.sources.GeoJsonSource
 import org.maplibre.geojson.Feature
@@ -276,12 +280,23 @@ internal object MapLayers {
 
     // ---- user puck --------------------------------------------------------------------------
 
-    /** Dot + accuracy halo + heading arrow on one GeoJSON source. The halo is in meters, so its
-     *  px radius is recomputed as the camera moves (`rescale`). */
-    class UserPuck(private val density: Float) {
+    /** Dot + accuracy halo + heading arrow + the wave on one GeoJSON source. The halo is in meters,
+     *  so its px radius is recomputed as the camera moves (`rescale`). The wave is a circle layer
+     *  whose radius and opacity an animator rewrites: a style has no animation of its own. Each
+     *  write redraws the map, so the wave rests between two runs and while the map is not shown
+     *  (`visible`). */
+    class UserPuck(private val density: Float, private val visible: () -> Boolean) {
         companion object {
             const val SOURCE_ID = "lecodes-user"
             const val HALO_ID = "lecodes-user-halo"
+            const val PULSE_ID = "lecodes-user-pulse"
+            const val DOT_RADIUS = 7f
+            /** How far the wave spreads, dp. */
+            const val PULSE_RADIUS = 36f
+            const val PULSE_OPACITY = 0.35f
+            /** A wave runs for PULSE_WAVE_MS, one every PULSE_PERIOD_MS. */
+            const val PULSE_WAVE_MS = 1600L
+            const val PULSE_PERIOD_MS = 2600L
             const val DOT_ID = "lecodes-user-dot"
             const val HEADING_ID = "lecodes-user-heading"
             const val HEADING_IMAGE = "lecodes-user-heading"
@@ -290,6 +305,8 @@ internal object MapLayers {
 
         private var source: GeoJsonSource? = null
         private var halo: CircleLayer? = null
+        private var pulse: CircleLayer? = null
+        private var animator: ValueAnimator? = null
         private var coordinate: LatLng? = null
         private var accuracy: Double? = null
 
@@ -309,6 +326,17 @@ internal object MapLayers {
             )
             style.addLayer(haloLayer)
 
+            val pulseLayer = CircleLayer(PULSE_ID, SOURCE_ID).withProperties(
+                PropertyFactory.circleColor(BLUE),
+                PropertyFactory.circleRadius(DOT_RADIUS),
+                PropertyFactory.circleOpacity(0f),
+            )
+            // Every value written is the frame's own: a paint property's default 300 ms transition
+            // would trail behind the animator (the new wave shown at the old one's size).
+            pulseLayer.circleRadiusTransition = TransitionOptions(0, 0)
+            pulseLayer.circleOpacityTransition = TransitionOptions(0, 0)
+            style.addLayer(pulseLayer)
+
             style.addLayer(SymbolLayer(HEADING_ID, SOURCE_ID).withProperties(
                 PropertyFactory.iconImage(HEADING_IMAGE),
                 PropertyFactory.iconRotate(Expression.get("heading")),
@@ -318,7 +346,7 @@ internal object MapLayers {
             ).also { it.setFilter(Expression.has("heading")) })
 
             style.addLayer(CircleLayer(DOT_ID, SOURCE_ID).withProperties(
-                PropertyFactory.circleRadius(7f),
+                PropertyFactory.circleRadius(DOT_RADIUS),
                 PropertyFactory.circleColor(BLUE),
                 PropertyFactory.circleStrokeColor(Color.WHITE),
                 PropertyFactory.circleStrokeWidth(2.5f),
@@ -326,16 +354,19 @@ internal object MapLayers {
 
             source = src
             halo = haloLayer
+            pulse = pulseLayer
         }
 
-        fun update(coordinate: LatLng?, accuracy: Double?, heading: Double?, map: MapLibreMap) {
+        fun update(coordinate: LatLng?, accuracy: Double?, heading: Double?, waves: Boolean, map: MapLibreMap) {
             this.coordinate = coordinate
             this.accuracy = accuracy
             val src = source ?: return
             if (coordinate == null) {
+                stopPulse()
                 src.setGeoJson(EMPTY_COLLECTION)
                 return
             }
+            if (waves) startPulse() else stopPulse()
             val feature = Feature.fromGeometry(Point.fromLngLat(coordinate.longitude, coordinate.latitude))
             if (heading != null) feature.addNumberProperty("heading", heading)
             src.setGeoJson(feature)
@@ -348,6 +379,46 @@ internal object MapLayers {
             val radius = (accuracy ?: 0.0) / metersPerStylePx(c.latitude, map.cameraPosition.zoom).coerceAtLeast(0.0001)
             // Below the dot the halo is noise; above ~ a screen it's meaningless.
             haloLayer.setProperties(PropertyFactory.circleRadius(if (radius < 10) 0f else min(radius, 600.0).toFloat()))
+        }
+
+        private fun startPulse() {
+            if (animator != null) return
+            // The system's "remove animations" setting: no wave.
+            if (Build.VERSION.SDK_INT >= 26 && !ValueAnimator.areAnimatorsEnabled()) return
+            var resting = false
+            animator = ValueAnimator.ofFloat(0f, 1f).apply {
+                duration = PULSE_PERIOD_MS
+                repeatCount = ValueAnimator.INFINITE
+                interpolator = LinearInterpolator()
+                addUpdateListener { a ->
+                    val layer = pulse ?: return@addUpdateListener
+                    val t = a.animatedFraction * PULSE_PERIOD_MS / PULSE_WAVE_MS
+                    if (t >= 1f || !visible()) {
+                        // Between two waves, and off screen: nothing is written, the map is not redrawn.
+                        if (!resting) { resting = true; layer.setProperties(PropertyFactory.circleOpacity(0f)) }
+                        return@addUpdateListener
+                    }
+                    resting = false
+                    val spread = 1f - (1f - t) * (1f - t)      // fast first, slowing as it fades
+                    layer.setProperties(
+                        PropertyFactory.circleRadius(DOT_RADIUS + (PULSE_RADIUS - DOT_RADIUS) * spread),
+                        PropertyFactory.circleOpacity(PULSE_OPACITY * (1f - t)),
+                    )
+                }
+                start()
+            }
+        }
+
+        private fun stopPulse() {
+            if (animator == null) return
+            release()
+            pulse?.setProperties(PropertyFactory.circleOpacity(0f))
+        }
+
+        /** The style or the map goes: the animator stops, the layers (the old style's) are not touched. */
+        fun release() {
+            animator?.cancel()
+            animator = null
         }
 
         /** A 24×24 dp arrow head pointing up (north), rotated per feature by `heading`. */

@@ -415,6 +415,8 @@ export interface MapUserLocationOptions {
   accuracy?: number
   /** Degrees clockwise from north — the direction wedge; null hides it. */
   heading?: number
+  /** The waves that spread from the dot. Default true. */
+  pulse?: boolean
 }
 const readMapUserLocationOptions = (v: unknown): MapUserLocationOptions | undefined => {
   const o = wire.object(v)
@@ -431,9 +433,16 @@ const readMapUserLocationOptions = (v: unknown): MapUserLocationOptions | undefi
     if (r === undefined) return undefined
     f1 = r
   }
+  let f2: boolean | undefined = undefined
+  if (wire.present(o.pulse)) {
+    const r = wire.bool(o.pulse)
+    if (r === undefined) return undefined
+    f2 = r
+  }
   const out: MapUserLocationOptions = {}
   if (f0 !== undefined) out.accuracy = f0
   if (f1 !== undefined) out.heading = f1
+  if (f2 !== undefined) out.pulse = f2
   return out
 }
 

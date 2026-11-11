@@ -120,6 +120,8 @@ export interface MapUserLocationOptions {
   accuracy?: f64 | null
   /** Degrees clockwise from north — the direction wedge; null hides it. */
   heading?: f64 | null
+  /** The waves that spread from the dot. Default true. */
+  pulse?: boolean
 }
 
 /** The methods of both surfaces: the View's and the node's, one implementation per platform. */

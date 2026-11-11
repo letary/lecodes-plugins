@@ -266,6 +266,8 @@ data class MapUserLocationOptions(
     val accuracy: Double? = null,
     /** Degrees clockwise from north — the direction wedge; null hides it. */
     val heading: Double? = null,
+    /** The waves that spread from the dot. Default true. */
+    val pulse: Boolean? = null,
 ) {
     companion object {
         internal fun read(r: PackedReader): MapUserLocationOptions? {
@@ -273,14 +275,16 @@ data class MapUserLocationOptions(
             if (n < 0) return null
             var m0: Double? = null
             var m1: Double? = null
+            var m2: Boolean? = null
             repeat(n) {
                 when (r.key()) {
                     "accuracy" -> if (r.isNull()) r.skip() else m0 = r.f64() ?: return null
                     "heading" -> if (r.isNull()) r.skip() else m1 = r.f64() ?: return null
+                    "pulse" -> if (r.isNull()) r.skip() else m2 = r.bool() ?: return null
                     else -> r.skip()
                 }
             }
-            return MapUserLocationOptions(accuracy = m0, heading = m1)
+            return MapUserLocationOptions(accuracy = m0, heading = m1, pulse = m2)
         }
     }
 }
