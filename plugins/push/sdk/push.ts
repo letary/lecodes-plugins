@@ -29,9 +29,9 @@
 
 import { NAME, PushBase, supports } from "./push.gen"
 import { _pushRuntime } from "lecodes-sdk/plugin"
-import type { PushEvents, PushPayload, PushRegisterOptions, PushRegistration, PushStatus } from "../contract"
+import type { PushEvents, PushPayload, PushRegistration, PushStatus } from "../contract"
 
-export type { PushPayload, PushRegisterOptions, PushStatus }
+export type { PushPayload, PushStatus }
 
 export type PushEvent = keyof PushEvents
 type Handler = (payload: PushPayload) => void
@@ -131,7 +131,7 @@ const built = /*#__PURE__*/ (() => {
       .then(st => {
         learn(st.address)
         if (st.permission === "denied") return
-        return service().register({}).then(r => learn(r.address))
+        return service().register().then(r => learn(r.address))
       })
       .catch(() => {})
   }
@@ -144,9 +144,9 @@ const built = /*#__PURE__*/ (() => {
       return st
     },
 
-    async register(options?: PushRegisterOptions): Promise<PushRegistration> {
+    async register(): Promise<PushRegistration> {
       assertSupported()
-      const r = await service().register(options ?? {})
+      const r = await service().register()
       learn(r.address)
       return r
     },
@@ -193,7 +193,7 @@ export const Push: {
   getStatus(): Promise<PushStatus>
   /** Ask for permission (first time) and register this device → the opaque address your server
    *  targets. Idempotent — safe to call every launch; rejects "denied" / "unavailable". */
-  register(options?: PushRegisterOptions): Promise<PushRegistration>
+  register(): Promise<PushRegistration>
   /** Remove this device's registration (the address stops receiving). */
   unregister(): Promise<void>
   /** The notifications sent outside a push channel: "tap" = tapped (the one that started the app

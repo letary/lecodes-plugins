@@ -43,27 +43,6 @@ public struct PushStatus {
     }
 }
 
-public struct PushRegisterOptions {
-    /// The app's OWN user id. Client-asserted and unverified. The registration reflects the latest
-    /// call: registering without it clears it.
-    public var user: String?
-
-    public init(user: String? = nil) {
-        self.user = user
-    }
-
-    init?(wire: WireIn) {
-        guard wire.isObject else { return nil }
-        let m0 = wire["user", 0]
-        if m0.isPresent {
-            guard let v = m0.string else { return nil }
-            self.user = v
-        } else {
-            self.user = nil
-        }
-    }
-}
-
 public struct PushRegistration {
     public var address: String
 
@@ -173,7 +152,7 @@ public protocol PushPlugin: AnyObject {
     func getStatus(_ reply: Reply<PushStatus, PushCode>)
     /// Ask for the permission (the first time) and register this device. Idempotent.
     /// Rejects with .denied / .unavailable.
-    func register(_ options: PushRegisterOptions?, _ reply: Reply<PushRegistration, PushCode>)
+    func register(_ reply: Reply<PushRegistration, PushCode>)
     /// Remove this device's registration.
     /// Rejects with .unavailable.
     func unregister(_ reply: Reply<Void, PushCode>)
@@ -217,13 +196,7 @@ final class PushGlue: WireServiceInstance {
         case "getStatus":
             plugin.getStatus(Reply<PushStatus, PushCode>(settle) { v, w in v.write(to: w) })
         case "register":
-            let w0 = args[0]
-            var a0: PushRegisterOptions? = nil
-            if w0.isPresent {
-                guard let v = PushRegisterOptions(wire: w0) else { return settle.reject("bad arguments — Push.register: options") }
-                a0 = v
-            }
-            plugin.register(a0, Reply<PushRegistration, PushCode>(settle) { v, w in v.write(to: w) })
+            plugin.register(Reply<PushRegistration, PushCode>(settle) { v, w in v.write(to: w) })
         case "unregister":
             plugin.unregister(Reply<Void, PushCode>(settle))
         case "getLaunch":

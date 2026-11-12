@@ -2,7 +2,7 @@
 // push: the service "push", contract version 2.
 
 import { ServiceChannel } from "lecodes-sdk/plugin"
-import type { PushEvents, PushHandled, PushParams, PushPayload, PushRegisterOptions, PushRegistration, PushStatus } from "../contract"
+import type { PushEvents, PushHandled, PushParams, PushPayload, PushRegistration, PushStatus } from "../contract"
 
 /** What the halves register under. */
 export const NAME = "push"
@@ -17,8 +17,8 @@ export const getStatus = (service: ServiceChannel<PushEvents>): Promise<PushStat
 
 /** Ask for the permission (the first time) and register this device. Idempotent.
  *  Rejects with "denied" / "unavailable". */
-export const register = (service: ServiceChannel<PushEvents>, options?: PushRegisterOptions): Promise<PushRegistration> =>
-  service._call("register", [options])
+export const register = (service: ServiceChannel<PushEvents>): Promise<PushRegistration> =>
+  service._call("register", [])
 
 /** Remove this device's registration.
  *  Rejects with "unavailable". */
@@ -57,7 +57,7 @@ export class PushBase extends ServiceChannel<PushEvents> {
   getStatus(): Promise<PushStatus> { return getStatus(this) }
   /** Ask for the permission (the first time) and register this device. Idempotent.
    *  Rejects with "denied" / "unavailable". */
-  register(options?: PushRegisterOptions): Promise<PushRegistration> { return register(this, options) }
+  register(): Promise<PushRegistration> { return register(this) }
   /** Remove this device's registration.
    *  Rejects with "unavailable". */
   unregister(): Promise<void> { return unregister(this) }

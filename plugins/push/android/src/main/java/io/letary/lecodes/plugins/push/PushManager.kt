@@ -41,7 +41,28 @@ import java.util.concurrent.Executors
 
 object PushManager {
 
-    private const val API_BASE = "https://le.codes"
+    /** The manifest meta-data naming the relay this app registers at: `lecodes app sync` writes it
+     *  from app.json "push" (`"hub"` = the project's hub). Absent = le.codes. */
+    const val RELAY_META_DATA = "io.letary.lecodes.PUSH_URL"
+    private const val DEFAULT_RELAY = "https://le.codes"
+    private const val HUB_RELAY = "https://hub.le.codes"
+
+    /** The app's own relay (`<base>/api/push/registrations`), read once: every caller runs after
+     *  `init` / `ensureContext`. */
+    private val apiBase: String by lazy {
+        val named = try {
+            appContext.packageManager.getApplicationInfo(appContext.packageName, android.content.pm.PackageManager.GET_META_DATA)
+                .metaData?.getString(RELAY_META_DATA)
+        } catch (e: Exception) { null }
+        (named?.takeIf { it.isNotBlank() } ?: DEFAULT_RELAY).trimEnd('/')
+    }
+
+    /** The relays a project may live on, in the order they are asked: the app's own, then hub. A
+     *  relay that has no such project answers 404 and the next one is asked — how the shared viewer,
+     *  built for le.codes, registers for a hub project (`lecodes dev` of one). The relay that took
+     *  the registration is remembered with it: its address means nothing anywhere else. */
+    private val relays: List<String> by lazy { listOf(apiBase, HUB_RELAY).distinct() }
+    private fun relayOf(projectUuid: String): String = prefs.getString("relay.$projectUuid", null) ?: apiBase
     const val EXTRA_PAYLOAD = "lecodes.push.payload"
 
     private lateinit var appContext: Context
@@ -132,15 +153,15 @@ object PushManager {
         return if (channel != null) channel in set.channels else set.untyped
     }
 
-    fun register(reply: Reply<PushRegistration, PushCode>, user: String?) {
+    fun register(reply: Reply<PushRegistration, PushCode>) {
         // Identity FIRST — an unattributed world must reject before any permission path.
         val uuid = engine?.currentProjectUuid ?: return reply.reject(PushCode.UNAVAILABLE)
         withPermission(reply) {
             FirebaseMessaging.getInstance().token
                 .addOnSuccessListener { token ->
-                    postRegistration(uuid, user, token) { address, error ->
+                    postRegistration(uuid, token) { address, error ->
                         if (address != null) {
-                            saveRegistration(uuid, address, user)
+                            saveRegistration(uuid, address)
                             reply.resolve(PushRegistration(address = address))
                         } else {
                             // The relay's own words are for the log: the app gets the contract's code.
@@ -157,12 +178,14 @@ object PushManager {
         val uuid = engine?.currentProjectUuid ?: return reply.reject(PushCode.UNAVAILABLE)
         val entry = loadRegistration(uuid)
         if (entry == null) { reply.resolve(); return }
+        val relay = relayOf(uuid)
         removeRegistration(uuid)
+        prefs.edit().remove("relay.$uuid").apply()
         // Fire-and-forget like iOS — the raw token is the ownership proof the DELETE carries.
         FirebaseMessaging.getInstance().token.addOnSuccessListener { token ->
             httpExecutor.execute {
                 runCatching {
-                    httpJson("DELETE", "$API_BASE/api/push/registrations/${entry.optString("address")}",
+                    httpJson("DELETE", "$relay/api/push/registrations/${entry.optString("address")}",
                         JSONObject().put("token", token))
                 }
             }
@@ -192,11 +215,10 @@ object PushManager {
     fun onNewToken(token: String) {
         val regs = loadRegistrations()
         for (uuid in regs.keys()) {
-            val entry = regs.optJSONObject(uuid) ?: continue
-            val user = entry.optString("user").takeIf { it.isNotEmpty() }
+            regs.optJSONObject(uuid) ?: continue
             // Rotation mints a new address (backend upsert key is the token) — store the fresh one.
-            postRegistration(uuid, user, token) { address, _ ->
-                if (address != null) saveRegistration(uuid, address, user)
+            postRegistration(uuid, token) { address, _ ->
+                if (address != null) saveRegistration(uuid, address)
             }
         }
     }
@@ -271,7 +293,7 @@ object PushManager {
         }
     }
 
-    // ── persistence (the iOS UserDefaults shape: projectUuid → { address, user }) ────────────
+    // ── persistence (the iOS UserDefaults shape: projectUuid → { address }) ──────────────────
 
     private fun loadRegistrations(): JSONObject =
         runCatching { JSONObject(prefs.getString("registrations", null) ?: "{}") }.getOrDefault(JSONObject())
@@ -279,11 +301,9 @@ object PushManager {
     private fun loadRegistration(projectUuid: String): JSONObject? =
         loadRegistrations().optJSONObject(projectUuid)
 
-    private fun saveRegistration(projectUuid: String, address: String, user: String?) {
+    private fun saveRegistration(projectUuid: String, address: String) {
         val regs = loadRegistrations()
-        val entry = JSONObject().put("address", address)
-        if (user != null) entry.put("user", user)
-        regs.put(projectUuid, entry)
+        regs.put(projectUuid, JSONObject().put("address", address))
         prefs.edit().putString("registrations", regs.toString()).apply()
     }
 
@@ -296,7 +316,7 @@ object PushManager {
     // ── backend ──────────────────────────────────────────────────────────────
 
     private fun postRegistration(
-        projectUuid: String, user: String?, token: String,
+        projectUuid: String, token: String,
         onResult: (address: String?, error: String?) -> Unit,
     ) {
         val body = JSONObject()
@@ -304,10 +324,16 @@ object PushManager {
             .put("platform", "fcm")
             .put("token", token)
             .put("hostApp", appContext.packageName)
-        if (user != null) body.put("user", user)
 
         httpExecutor.execute {
-            val response = runCatching { httpJson("POST", "$API_BASE/api/push/registrations", body) }.getOrNull()
+            // The first relay that knows the project (404 = it does not: the next one is asked).
+            var response: Pair<Int, String>? = null
+            for (relay in relays) {
+                val answer = runCatching { httpJson("POST", "$relay/api/push/registrations", body) }.getOrNull()
+                response = answer
+                if (answer != null && answer.first in 200..299) prefs.edit().putString("relay.$projectUuid", relay).apply()
+                if (answer == null || answer.first != 404) break
+            }
             when {
                 response == null -> onResult(null, "unavailable")
                 response.first in 200..299 -> {

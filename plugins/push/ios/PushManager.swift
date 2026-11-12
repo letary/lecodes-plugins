@@ -34,8 +34,20 @@ public final class PushManager: LeCodesNotificationHandler {
     private init() {}
 
     public weak var engine: LeCodesEngine?
-    /// The le.codes backend the viewer registers against.
-    public var apiBase = "https://le.codes"
+    /// The app's own relay (`<base>/api/push/registrations`): Info.plist's `LeCodesPushURL`, which
+    /// `lecodes app sync` writes from app.json "push" (`"hub"` = the project's hub). Absent = le.codes.
+    public lazy var apiBase: String = {
+        let named = (Bundle.main.object(forInfoDictionaryKey: "LeCodesPushURL") as? String)?.trimmingCharacters(in: .whitespaces) ?? ""
+        let base = named.isEmpty ? "https://le.codes" : named
+        return base.hasSuffix("/") ? String(base.dropLast()) : base
+    }()
+    /// The relays a project may live on, in the order they are asked: the app's own, then hub. A
+    /// relay that has no such project answers 404 and the next one is asked — how the shared viewer,
+    /// built for le.codes, registers for a hub project (`lecodes dev` of one). The relay that took
+    /// the registration is remembered with it: its address means nothing anywhere else.
+    private lazy var relays: [String] = apiBase == "https://hub.le.codes" ? [apiBase] : [apiBase, "https://hub.le.codes"]
+    private func relayKey(_ uuid: String) -> String { "lecodes.push.relay.\(uuid)" }
+    private func relay(of uuid: String) -> String { UserDefaults.standard.string(forKey: relayKey(uuid)) ?? apiBase }
     /// APNs gateway of the tokens this build mints — "sandbox" or "production".
     ///
     /// Derived from the `aps-environment` this build was SIGNED with, because that entitlement is
@@ -80,10 +92,10 @@ public final class PushManager: LeCodesNotificationHandler {
             tokenWaiters = []
             waiters.forEach { $0(hex) }
             // APNs rotated the token (restore, reinstall): every persisted registration
-            // points at a dead token — re-register them all with their stored user keys.
+            // points at a dead token — re-register them all.
             if changed {
-                for (uuid, info) in persistedRegistrations() {
-                    registerWithBackend(uuid, user: info["user"], token: hex) { _ in }
+                for uuid in persistedRegistrations().keys {
+                    registerWithBackend(uuid, token: hex) { _ in }
                 }
             }
         }
@@ -119,11 +131,9 @@ public final class PushManager: LeCodesNotificationHandler {
     private func persistedRegistrations() -> [String: [String: String]] {
         (UserDefaults.standard.dictionary(forKey: registrationsKey) as? [String: [String: String]]) ?? [:]
     }
-    private func persistRegistration(_ uuid: String, address: String, user: String?) {
+    private func persistRegistration(_ uuid: String, address: String) {
         var all = persistedRegistrations()
-        var info = ["address": address]
-        if let user { info["user"] = user }
-        all[uuid] = info
+        all[uuid] = ["address": address]
         UserDefaults.standard.set(all, forKey: registrationsKey)
     }
     private func removeRegistration(_ uuid: String) {
@@ -148,11 +158,10 @@ public final class PushManager: LeCodesNotificationHandler {
         reply.resolve(PushStatus(permission: permission, registered: address != nil, address: address))
     }
 
-    func register(_ projectUuid: String?, _ options: PushRegisterOptions?, _ reply: Reply<PushRegistration, PushCode>) {
+    func register(_ projectUuid: String?, _ reply: Reply<PushRegistration, PushCode>) {
         // No identity = an unattributed world (launcher, dev bundle): push can't know which
         // app is asking, so it fails BEFORE any permission path (the plugin ordering rule).
         guard let uuid = projectUuid else { return reply.reject(.unavailable) }
-        let user = options?.user
 
         // Straight to the OS prompt — no viewer-level consent sheet. Turning a project's
         // notifications OFF is enforced at the RELAY, not here: when the app isn't running iOS
@@ -165,7 +174,7 @@ public final class PushManager: LeCodesNotificationHandler {
                 guard state == .granted else { return reply.reject(.denied) }
                 withDeviceToken { [self] token in
                     guard let token else { return reply.reject(.unavailable) }
-                    registerWithBackend(uuid, user: user, token: token) { address in
+                    registerWithBackend(uuid, token: token) { address in
                         if let address {
                             reply.resolve(PushRegistration(address: address))
                         } else {
@@ -180,13 +189,14 @@ public final class PushManager: LeCodesNotificationHandler {
     func unregister(_ projectUuid: String?, _ reply: Reply<Void, PushCode>) {
         guard let uuid = projectUuid else { return reply.reject(.unavailable) }
         if let address = persistedRegistrations()[uuid]?["address"], let token = deviceTokenHex {
-            var request = URLRequest(url: URL(string: "\(apiBase)/api/push/registrations/\(address)")!)
+            var request = URLRequest(url: URL(string: "\(relay(of: uuid))/api/push/registrations/\(address)")!)
             request.httpMethod = "DELETE"
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
             request.httpBody = try? JSONSerialization.data(withJSONObject: ["token": token])
             URLSession.shared.dataTask(with: request).resume()   // best effort
         }
         removeRegistration(uuid)
+        UserDefaults.standard.removeObject(forKey: relayKey(uuid))
         reply.resolve()
     }
 
@@ -223,8 +233,9 @@ public final class PushManager: LeCodesNotificationHandler {
 
     // MARK: - Backend registration
 
-    private func registerWithBackend(_ uuid: String, user: String?, token: String,
+    private func registerWithBackend(_ uuid: String, token: String, relayIndex: Int = 0,
                                      _ done: @escaping (String?) -> Void) {
+        let relay = relays[relayIndex]
         var body: [String: Any] = [
             "projectUuid": uuid, "platform": "apns", "token": token, "environment": environment,
         ]
@@ -233,8 +244,7 @@ public final class PushManager: LeCodesNotificationHandler {
         // sends would die with DeviceTokenNotForTopic. The relay also fail-fasts registration
         // for bundle ids it can never sign for (foreign teams, until per-app keys exist).
         if let hostApp = Bundle.main.bundleIdentifier { body["hostApp"] = hostApp }
-        if let user { body["user"] = user }
-        var request = URLRequest(url: URL(string: "\(apiBase)/api/push/registrations")!)
+        var request = URLRequest(url: URL(string: "\(relay)/api/push/registrations")!)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = try? JSONSerialization.data(withJSONObject: body)
@@ -244,8 +254,16 @@ public final class PushManager: LeCodesNotificationHandler {
                let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
                 address = json["address"] as? String
             }
+            // This relay has no such project: the next one is asked.
+            let unknownHere = (response as? HTTPURLResponse)?.statusCode == 404
             onMainThread { [self, address] in
-                if let address { persistRegistration(uuid, address: address, user: user) }
+                if address == nil, unknownHere, relayIndex + 1 < relays.count {
+                    return registerWithBackend(uuid, token: token, relayIndex: relayIndex + 1, done)
+                }
+                if let address {
+                    persistRegistration(uuid, address: address)
+                    UserDefaults.standard.set(relay, forKey: relayKey(uuid))
+                }
                 done(address)
             }
         }.resume()

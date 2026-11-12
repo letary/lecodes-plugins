@@ -48,29 +48,6 @@ data class PushStatus(
     }
 }
 
-data class PushRegisterOptions(
-    /**
-     * The app's OWN user id. Client-asserted and unverified. The registration reflects the latest
-     * call: registering without it clears it.
-     */
-    val user: String? = null,
-) {
-    companion object {
-        internal fun read(r: PackedReader): PushRegisterOptions? {
-            val n = r.beginObject()
-            if (n < 0) return null
-            var m0: String? = null
-            repeat(n) {
-                when (r.key()) {
-                    "user" -> if (r.isNull()) r.skip() else m0 = r.string() ?: return null
-                    else -> r.skip()
-                }
-            }
-            return PushRegisterOptions(user = m0)
-        }
-    }
-}
-
 data class PushRegistration(
     val address: String,
 ) {
@@ -183,7 +160,7 @@ interface PushPlugin {
      * Ask for the permission (the first time) and register this device. Idempotent.
      * Rejects with DENIED / UNAVAILABLE.
      */
-    fun register(options: PushRegisterOptions?, reply: Reply<PushRegistration, PushCode>)
+    fun register(reply: Reply<PushRegistration, PushCode>)
 
     /**
      * Remove this device's registration.
@@ -230,8 +207,7 @@ internal object PushGlue {
                 plugin.getStatus(Reply<PushStatus, PushCode>(settle) { v, w -> v.write(w) })
             }
             "register" -> {
-                val a0 = if (0 < n && !r.isNull()) (PushRegisterOptions.read(r) ?: return settle.reject("bad arguments — Push.register: options")) else { if (0 < n) r.skip(); null }
-                plugin.register(a0, Reply<PushRegistration, PushCode>(settle) { v, w -> v.write(w) })
+                plugin.register(Reply<PushRegistration, PushCode>(settle) { v, w -> v.write(w) })
             }
             "unregister" -> {
                 plugin.unregister(Reply<Unit, PushCode>(settle, null))

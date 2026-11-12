@@ -26,8 +26,8 @@ public final class PushService: PushPlugin {
         PushManager.shared.getStatus(engine?.currentProjectUuid, reply)
     }
 
-    public func register(_ options: PushRegisterOptions?, _ reply: Reply<PushRegistration, PushCode>) {
-        PushManager.shared.register(engine?.currentProjectUuid, options, reply)
+    public func register(_ reply: Reply<PushRegistration, PushCode>) {
+        PushManager.shared.register(engine?.currentProjectUuid, reply)
     }
 
     public func unregister(_ reply: Reply<Void, PushCode>) {

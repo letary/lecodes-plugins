@@ -36,12 +36,6 @@ export interface PushStatus {
   address?: string
 }
 
-export interface PushRegisterOptions {
-  /** The app's OWN user id. Client-asserted and unverified. The registration reflects the latest
-   *  call: registering without it clears it. */
-  user?: string
-}
-
 export interface PushRegistration {
   address: string
 }
@@ -69,7 +63,7 @@ export interface Push extends Service<"push", PushParams, PushEvents> {
   getStatus(): Promise<PushStatus>
   /** Ask for the permission (the first time) and register this device. Idempotent.
    *  @rejects denied unavailable */
-  register(options?: PushRegisterOptions): Promise<PushRegistration>
+  register(): Promise<PushRegistration>
   /** Remove this device's registration.
    *  @rejects unavailable */
   unregister(): Promise<void>

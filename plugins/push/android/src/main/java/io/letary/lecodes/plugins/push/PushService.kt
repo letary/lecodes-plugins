@@ -19,8 +19,7 @@ class PushService(private val events: PushEvents) : PushPlugin {
 
     override fun getStatus(reply: Reply<PushStatus, PushCode>) = reply.resolve(PushManager.getStatus())
 
-    override fun register(options: PushRegisterOptions?, reply: Reply<PushRegistration, PushCode>) =
-        PushManager.register(reply, options?.user?.takeIf { it.isNotEmpty() })
+    override fun register(reply: Reply<PushRegistration, PushCode>) = PushManager.register(reply)
 
     override fun unregister(reply: Reply<Unit, PushCode>) = PushManager.unregister(reply)
 
