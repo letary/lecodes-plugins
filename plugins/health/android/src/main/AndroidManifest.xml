@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Merged into the consuming app by the AGP manifest merger. What Health Connect asks of an app that
+     reads it, all of it declarable by a library:
+     - the READ permissions of the plugin's types (runtime permissions of Health Connect's own: its
+       sheet grants them, PermissionController's contract, never the host's permission service);
+     - the Health Connect app's package under <queries> (Android 11+ package visibility: Android 9-13
+       reach the store through that app);
+     - the privacy screen Health Connect opens from its sheet: an activity for
+       ACTION_SHOW_PERMISSIONS_RATIONALE (Android 9-13) and, Android 14+, an activity-alias of it for
+       VIEW_PERMISSION_USAGE / HEALTH_PERMISSIONS. Without them the sheet is not shown at all.
+       HealthRationaleActivity opens the app's privacy policy (the string lecodes_health_privacy_policy_url
+       the app sets) or, without one, says what the plugin reads.
+     NOT declarable here: the library's minSdk. connect-client is minSdk 26 and LeCodes apps are 23 —
+     the APP's manifest says <uses-sdk tools:overrideLibrary="androidx.health.connect.client" />
+     (a library's own uses-sdk instructions do not reach the app's merge), or the app is minSdk 26.
+     Below API 26 the plugin answers available() false and touches nothing of the library. -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <uses-permission android:name="android.permission.health.READ_STEPS" />
+    <uses-permission android:name="android.permission.health.READ_DISTANCE" />
+    <uses-permission android:name="android.permission.health.READ_ACTIVE_CALORIES_BURNED" />
+
+    <queries>
+        <package android:name="com.google.android.apps.healthdata" />
+    </queries>
+
+    <application>
+        <activity
+            android:name="io.letary.lecodes.plugins.health.HealthRationaleActivity"
+            android:exported="true"
+            android:label="@string/lecodes_health_rationale_title"
+            android:theme="@android:style/Theme.Material.Light">
+            <intent-filter>
+                <action android:name="androidx.health.ACTION_SHOW_PERMISSIONS_RATIONALE" />
+            </intent-filter>
+        </activity>
+
+        <activity-alias
+            android:name="io.letary.lecodes.plugins.health.ViewPermissionUsageActivity"
+            android:exported="true"
+            android:targetActivity="io.letary.lecodes.plugins.health.HealthRationaleActivity"
+            android:permission="android.permission.START_VIEW_PERMISSION_USAGE">
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW_PERMISSION_USAGE" />
+                <category android:name="android.intent.category.HEALTH_PERMISSIONS" />
+            </intent-filter>
+        </activity-alias>
+    </application>
+
+</manifest>

@@ -1,0 +1,25 @@
+{
+  "id": "health",
+  "name": "Health",
+  "version": "2.0.0",
+  "sdk": "^2.0.0",
+  "description": "Activity totals from the system's health store, read only: steps, distance, active energy over a range, whole or by the hour / the calendar day, de-duplicated across the phone and the watch. Apple HealthKit on iOS, Health Connect on Android. No web half. The app's side is Health.",
+  "ios": {
+    "module": "LeCodesHealth",
+    "register": "LeCodesHealthPlugin",
+    "infoPlist": {
+      "NSHealthShareUsageDescription": "The app reads your steps, distance and active energy from Health to show your activity."
+    },
+    "entitlements": {
+      "com.apple.developer.healthkit": true
+    }
+  },
+  "android": {
+    "module": "lecodes-health",
+    "register": "io.letary.lecodes.plugins.health.LeCodesHealthPlugin",
+    "dependencies": [
+      "androidx.health.connect:connect-client:1.1.0"
+    ]
+  },
+  "web": null
+}

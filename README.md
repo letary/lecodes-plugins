@@ -180,6 +180,7 @@ export interface CameraView extends View<"camera", CameraParams, CameraEvents> {
 | `push` | service | `push` | no |
 | `apple-sign-in` | service | `appleSignIn` | no: iOS only, the system's sheet |
 | `biometrics` | service | `biometrics` | no: a browser has no owner's confirmation (WebAuthn is a sign-in) |
+| `health` | service | `health` | no: a browser has no health store |
 | `browser` | service + view | `browser`, `webView` | yes: a popup, an iframe (own-origin pages) |
 | `webrtc` | service + view | `rtcMedia`, `rtcPeerConnection`, `rtcVideo` | yes: the browser's own WebRTC |
 | `ar` | service | `ar` | yes: WebXR where Chrome has it (ARCore: hit tests, anchors, QR codes — qr-anchor's wasm), else the camera under the scene, turned by the sensors (no planes, no images) |

@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The privacy screen Health Connect opens from its permission sheet (HealthRationaleActivity). An app
+     overrides these in its own res/values (an app's resource wins over a library's of the same name):
+     lecodes_health_privacy_policy_url — its privacy policy, opened in the browser instead of the text
+     (Google Play's Health Connect policy asks for the policy there); lecodes_health_rationale — the
+     text shown without one (%1$s: the app's name). -->
+<resources>
+    <string name="lecodes_health_privacy_policy_url" translatable="false"></string>
+    <string name="lecodes_health_rationale_title">Health data</string>
+    <string name="lecodes_health_rationale">%1$s reads the totals of your steps, distance and active energy from Health Connect to show your activity. It writes nothing to Health Connect.</string>
+</resources>
