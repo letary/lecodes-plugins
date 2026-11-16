@@ -10,10 +10,11 @@
        VIEW_PERMISSION_USAGE / HEALTH_PERMISSIONS. Without them the sheet is not shown at all.
        HealthRationaleActivity opens the app's privacy policy (the string lecodes_health_privacy_policy_url
        the app sets) or, without one, says what the plugin reads.
-     NOT declarable here: the library's minSdk. connect-client is minSdk 26 and LeCodes apps are 23 —
-     the APP's manifest says <uses-sdk tools:overrideLibrary="androidx.health.connect.client" />
-     (a library's own uses-sdk instructions do not reach the app's merge), or the app is minSdk 26.
-     Below API 26 the plugin answers available() false and touches nothing of the library. -->
+     The library's minSdk is the plugin manifest's (lecodes-plugin.json android.overrideLibrary):
+     connect-client is minSdk 26, LeCodes apps 23, and the shell lets it in with
+     <uses-sdk tools:overrideLibrary="androidx.health.connect.client" /> (`lecodes app sync` writes it
+     into the lecodes-runtime manifest; the viewer's build into an overlay of its own). Below API 26
+     the plugin answers available() false and touches nothing of the library. -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <uses-permission android:name="android.permission.health.READ_STEPS" />
