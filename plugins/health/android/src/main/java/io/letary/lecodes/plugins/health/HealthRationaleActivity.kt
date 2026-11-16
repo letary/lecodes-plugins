@@ -6,9 +6,9 @@
 //  through the activity-alias on Android 14+ (the plugin's AndroidManifest). Health Connect shows no
 //  sheet for an app without one.
 //
-//  The policy is the APP's: with the string lecodes_health_privacy_policy_url set (the app's
-//  res/values) this opens it in the browser and closes; without one it shows what the plugin reads
-//  (lecodes_health_rationale). A plain Activity on a theme of the platform's own — no AppCompat
+//  The policy is the APP's: with the string lecodes_privacy_policy_url set (app.json
+//  "privacyPolicy", which `lecodes app sync` writes into the shell) this opens it in the browser and
+//  closes; without one it shows what the plugin reads (lecodes_health_rationale). A plain Activity on a theme of the platform's own — no AppCompat
 //  theme of the app's is needed, nothing of the engine runs here.
 //
 
@@ -25,7 +25,7 @@ class HealthRationaleActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        val url = getString(R.string.lecodes_health_privacy_policy_url).trim()
+        val url = getString(R.string.lecodes_privacy_policy_url).trim()
         if (url.isNotEmpty() && open(url)) {
             finish()
             return

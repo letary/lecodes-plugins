@@ -8,8 +8,8 @@
      - the privacy screen Health Connect opens from its sheet: an activity for
        ACTION_SHOW_PERMISSIONS_RATIONALE (Android 9-13) and, Android 14+, an activity-alias of it for
        VIEW_PERMISSION_USAGE / HEALTH_PERMISSIONS. Without them the sheet is not shown at all.
-       HealthRationaleActivity opens the app's privacy policy (the string lecodes_health_privacy_policy_url
-       the app sets) or, without one, says what the plugin reads.
+       HealthRationaleActivity opens the app's privacy policy (the string lecodes_privacy_policy_url:
+       app.json "privacyPolicy") or, without one, says what the plugin reads.
      And the library's minSdk: connect-client is minSdk 26, LeCodes apps 23. The uses-sdk below lets
      it in — the half is inert below API 26 (available() false, nothing of the library touched). It
      works because the merger carries a library's tools attribute into the app's <uses-sdk> (AGP 8.13:
