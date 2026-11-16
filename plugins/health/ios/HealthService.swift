@@ -6,11 +6,14 @@
 //
 //  Read only, totals only: every sum is HealthKit's own statistics with `.cumulativeSum`, which
 //  de-duplicates the sources (the iPhone and the Watch count one walk once) — never a sum of
-//  samples. No bucket: one HKStatisticsQuery over the range. A bucket: one
-//  HKStatisticsCollectionQuery anchored at `from` with an interval of an hour or of a calendar day
+//  samples. One HKStatisticsCollectionQuery anchored at `from`, its interval an hour, a calendar day
 //  (DateComponents: the device's calendar and time zone, so a day is 23 or 25 hours where the clock
-//  changes). The rows are the buckets this file counts (`edges`), each looked up in the collection by
-//  the middle of its time — a bucket without data is a row of 0, whatever HealthKit left out.
+//  changes) or, without a bucket, the whole range. Not an HKStatisticsQuery for the whole range: the
+//  collection splits a sample that straddles an interval's edge by its time on each side, the plain
+//  query counts it whole — measured on the simulator, a 23:50-00:10 sample of 400 steps made "today"
+//  2000 against 1800 for its 24 hours. The rows are the buckets this file counts (`edges`), each
+//  looked up in the collection by the middle of its time — a bucket without data is a row of 0,
+//  whatever HealthKit left out.
 //
 //  HealthKit never tells an app whether it may READ a type: a refusal looks like no data, so a
 //  refused type sums to zeros. Only a type the app never asked about is told apart
@@ -68,19 +71,19 @@ public final class HealthService: HealthPlugin {
         // the part inside the period they compute.
         let predicate = HKQuery.predicateForSamples(withStart: from, end: Self.date(range.to), options: [])
 
-        guard let bucket = range.bucket else {
-            let query = HKStatisticsQuery(quantityType: kind.quantity, quantitySamplePredicate: predicate, options: .cumulativeSum) { _, statistics, error in
-                if let error, HealthService.code(error) != .errorNoData { return HealthService.reject(reply, error) }
-                let value = statistics?.sumQuantity()?.doubleValue(for: kind.unit) ?? 0
-                reply.resolve([HealthTotal(start: range.from, end: range.to, value: value)])
+        let edges: [Double]
+        let interval: DateComponents
+        if let bucket = range.bucket {
+            guard let counted = Self.edges(range, bucket) else {
+                return reply.fail("Health.sum: more than \(Self.maxBuckets) buckets — a shorter range or a longer bucket")
             }
-            return store.execute(query)
+            edges = counted
+            interval = bucket == .day ? DateComponents(day: 1) : DateComponents(hour: 1)
+        } else {
+            // One interval from `from`, as long as the range (rounded up to a whole second).
+            edges = [range.from, range.to]
+            interval = DateComponents(second: max(1, Int(((range.to - range.from) / 1000).rounded(.up))))
         }
-
-        guard let edges = Self.edges(range, bucket) else {
-            return reply.fail("Health.sum: more than \(Self.maxBuckets) buckets — a shorter range or a longer bucket")
-        }
-        let interval = bucket == .day ? DateComponents(day: 1) : DateComponents(hour: 1)
         let query = HKStatisticsCollectionQuery(quantityType: kind.quantity, quantitySamplePredicate: predicate,
                                                 options: .cumulativeSum, anchorDate: from, intervalComponents: interval)
         // No statisticsUpdateHandler: the query stops once the initial results are in.
