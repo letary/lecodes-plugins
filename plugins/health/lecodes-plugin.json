@@ -19,9 +19,6 @@
     "register": "io.letary.lecodes.plugins.health.LeCodesHealthPlugin",
     "dependencies": [
       "androidx.health.connect:connect-client:1.1.0"
-    ],
-    "overrideLibrary": [
-      "androidx.health.connect.client"
     ]
   },
   "web": null

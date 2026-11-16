@@ -158,13 +158,10 @@ export interface CameraView extends View<"camera", CameraParams, CameraEvents> {
   never under `ios/`: each is a binary target named after its folder (`QrAnchorFFI`, one name per
   package — two plugins may not carry one alike) that the half's target links; a shell copies it
   beside the vendored sources. Android: `dependencies` (Maven; a
-  `platform:` prefix is a BoM), `gradlePlugins`, `overrideLibrary` — the packages of dependencies
-  whose minSdk is above the app's 23 (health's `["androidx.health.connect.client"]`, minSdk 26): the
-  shell lets them in with `<uses-sdk tools:overrideLibrary>` (`lecodes app sync` writes every
-  plugin's list into its CLI-owned lecodes-runtime manifest; the Android viewer's build into an
-  overlay of its own), and the half touches them only on the API levels they need;
-  `<uses-permission>` and services are the half's own `AndroidManifest.xml`. Web: `dependencies` (npm), `resources` — what the half asks of its bundler,
-  handed to `register` under these names (a function: nothing is fetched before the half asks), so
+  `platform:` prefix is a BoM), `gradlePlugins`; `<uses-permission>` and services are the half's own
+  `AndroidManifest.xml` — and so is a dependency whose minSdk is above the app's 23:
+  `<uses-sdk tools:overrideLibrary="<its package>"/>` there (health's), the half inert below it.
+  Web: `dependencies` (npm), `resources` — what the half asks of its bundler, handed to `register` under these names (a function: nothing is fetched before the half asks), so
   the half names no bundler. A resource's `module` is a file of a dependency
   (`maplibre-gl/dist/maplibre-gl.css`) or, starting with `./`, a file of the plugin's own folder
   (`ar`: `./web/qrAnchorWorker.ts` as `worker-url`, its QR detector's worker — the wasm it loads,
