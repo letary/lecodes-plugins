@@ -1,0 +1,22 @@
+{
+  "id": "biometrics",
+  "name": "Biometrics",
+  "version": "2.0.0",
+  "sdk": "^2.0.0",
+  "description": "The device owner's confirmation through the system's dialog: Face ID / Touch ID (LocalAuthentication), the fingerprint or face of Android's BiometricPrompt, optionally the passcode / PIN in their place. A yes or no, not a key. No web half. The app's side is Biometrics.",
+  "ios": {
+    "module": "LeCodesBiometrics",
+    "register": "LeCodesBiometricsPlugin",
+    "infoPlist": {
+      "NSFaceIDUsageDescription": "The app uses Face ID to confirm that it is you."
+    }
+  },
+  "android": {
+    "module": "lecodes-biometrics",
+    "register": "io.letary.lecodes.plugins.biometrics.LeCodesBiometricsPlugin",
+    "dependencies": [
+      "androidx.biometric:biometric:1.1.0"
+    ]
+  },
+  "web": null
+}

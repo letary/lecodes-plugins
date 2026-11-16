@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Merged into the consuming app by the AGP manifest merger. Normal (install-time) permissions:
+     nothing is asked at run time. USE_BIOMETRIC is BiometricPrompt's (API 28+), USE_FINGERPRINT the
+     fingerprint API androidx.biometric falls back to below it (API 23-27); the library's own manifest
+     declares both as well. No <uses-feature>: neither implies a required feature, and the app runs
+     where there is no sensor (status: available false). -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <uses-permission android:name="android.permission.USE_BIOMETRIC" />
+    <uses-permission android:name="android.permission.USE_FINGERPRINT" />
+</manifest>
