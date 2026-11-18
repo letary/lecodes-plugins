@@ -1,0 +1,16 @@
+{
+  "id": "torch",
+  "name": "Torch",
+  "version": "2.0.0",
+  "sdk": "^2.0.0",
+  "description": "The device's flashlight: on / off, whether there is one, its brightness (AVCaptureDevice's torch, CameraManager's torch mode and strength levels on Android 13+). No permission. No web half. The app's side is Torch.",
+  "ios": {
+    "module": "LeCodesTorch",
+    "register": "LeCodesTorchPlugin"
+  },
+  "android": {
+    "module": "lecodes-torch",
+    "register": "io.letary.lecodes.plugins.torch.LeCodesTorchPlugin"
+  },
+  "web": null
+}

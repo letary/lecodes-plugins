@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The torch needs no permission (CameraManager.setTorchMode works without CAMERA). The flash is
+     declared NOT required: an app with this plugin installs on a device without one, and
+     Torch.available() answers false there. -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <uses-feature android:name="android.hardware.camera.flash" android:required="false" />
+</manifest>
