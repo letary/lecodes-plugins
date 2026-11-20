@@ -32,6 +32,7 @@ let package = Package(
         .library(name: "LeCodesPush", targets: ["LeCodesPush"]),
         .library(name: "LeCodesQRScanner", targets: ["LeCodesQRScanner"]),
         .library(name: "LeCodesSpeech", targets: ["LeCodesSpeech"]),
+        .library(name: "LeCodesTorch", targets: ["LeCodesTorch"]),
         .library(name: "LeCodesWebRTC", targets: ["LeCodesWebRTC"]),
     ],
     dependencies: [
@@ -124,6 +125,12 @@ let package = Package(
             name: "LeCodesSpeech",
             dependencies: [.product(name: "LeCodes", package: "lecodes")],
             path: "plugins/speech/ios"
+        ),
+        // torch
+        .target(
+            name: "LeCodesTorch",
+            dependencies: [.product(name: "LeCodes", package: "lecodes")],
+            path: "plugins/torch/ios"
         ),
         // webrtc
         .target(
