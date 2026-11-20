@@ -19,9 +19,9 @@ export const info = (service: ServiceChannel<TorchEvents>): Promise<TorchInfo> =
 export const state = (service: ServiceChannel<TorchEvents>): Promise<TorchState> =>
   service._call("state", [])
 
-/** Light the torch (`on`) at `level` — (0, 1], clamped; 0 or less turns it off; left out, the
- *  platform's default brightness (iOS: full, Android: the flash's default strength) — or turn it
- *  off. Resolves with the state the torch is in after it.
+/** Light the torch (`on`) at `level` — a fraction of full brightness, (0, 1]; left out, the
+ *  platform's default (iOS: full, Android: the flash's default strength) — or turn it off (`level`
+ *  is not read then). Resolves with the state the torch is in after it.
  *  `unavailable`: no torch, or the system holds it back (iOS: the LED is too hot). `busy`: the
  *  camera holds it (Android: another app, or a camera of this one, has it open). `failed`:
  *  anything else.
@@ -29,16 +29,10 @@ export const state = (service: ServiceChannel<TorchEvents>): Promise<TorchState>
 export const set = (service: ServiceChannel<TorchEvents>, on: boolean, level?: number): Promise<TorchState> =>
   service._call("set", [on, level])
 
-/** Turn a lit torch off, a dark one on at the level this session last lit it at (else the
- *  default). Resolves with the state after it.
- *  Rejects with "unavailable" / "busy" / "failed". */
-export const toggle = (service: ServiceChannel<TorchEvents>): Promise<TorchState> =>
-  service._call("toggle", [])
-
 // ---- what the host's half has --------------------------------------------------------------------
 
 /** A method of the contract. */
-export type Method = "info" | "state" | "set" | "toggle"
+export type Method = "info" | "state" | "set"
 
 /** Whether this host has the service "torch" — and, given a method, a half new enough for it
  *  (a method added after the first version of the contract is tagged `@since`). */
@@ -55,16 +49,12 @@ export class TorchBase extends ServiceChannel<TorchEvents> {
   info(): Promise<TorchInfo> { return info(this) }
   /** Whether the torch is lit, and how bright. Off on a device without one. Never rejects. */
   state(): Promise<TorchState> { return state(this) }
-  /** Light the torch (`on`) at `level` — (0, 1], clamped; 0 or less turns it off; left out, the
-   *  platform's default brightness (iOS: full, Android: the flash's default strength) — or turn it
-   *  off. Resolves with the state the torch is in after it.
+  /** Light the torch (`on`) at `level` — a fraction of full brightness, (0, 1]; left out, the
+   *  platform's default (iOS: full, Android: the flash's default strength) — or turn it off (`level`
+   *  is not read then). Resolves with the state the torch is in after it.
    *  `unavailable`: no torch, or the system holds it back (iOS: the LED is too hot). `busy`: the
    *  camera holds it (Android: another app, or a camera of this one, has it open). `failed`:
    *  anything else.
    *  Rejects with "unavailable" / "busy" / "failed". */
   set(on: boolean, level?: number): Promise<TorchState> { return set(this, on, level) }
-  /** Turn a lit torch off, a dark one on at the level this session last lit it at (else the
-   *  default). Resolves with the state after it.
-   *  Rejects with "unavailable" / "busy" / "failed". */
-  toggle(): Promise<TorchState> { return toggle(this) }
 }

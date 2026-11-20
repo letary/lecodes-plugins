@@ -36,8 +36,8 @@ export const Torch: {
   /** Whether the torch is lit and how bright (`level` 0..1; 0 when off). Off on a host without the
    *  service. Never rejects. */
   state(): Promise<TorchState>
-  /** Light the torch at `level` (0..1; 0 turns it off; left out: the platform's default — full on
-   *  iOS, the flash's default strength on Android), or turn it off. Resolves with the state after it.
+  /** Light the torch at `level` (0..1, clamped; 0 turns it off; left out: the platform's default —
+   *  full on iOS, the flash's default strength on Android), or turn it off. Resolves with the state after it.
    *  Rejects "unavailable" (no torch — also on a host without the service — or iOS holds it back
    *  while the LED is too hot), "busy" (Android: the camera has it), "failed". */
   set(on: boolean, level?: number): Promise<TorchState>
@@ -48,6 +48,8 @@ export const Torch: {
   onChange(listener: ChangeListener): () => void
 } = /*#__PURE__*/ (() => {
   let client: TorchBase | null = null
+  /** The level the app last lit the torch at (undefined: the default): what toggle() lights again. */
+  let lastLevel: number | undefined
   const service = (): TorchBase => client ??= new TorchBase()
 
   const torch = {
@@ -71,12 +73,16 @@ export const Torch: {
         throw new Error("Torch.set: `level` is a number from 0 to 1")
       }
       if (!supports()) throw new Error("unavailable")
-      return await service().set(on, level === undefined ? undefined : Math.min(1, Math.max(0, level)))
+      // The one place a level is read: the halves are handed (0, 1] or none.
+      if (!on || (level !== undefined && level <= 0)) return await service().set(false)
+      const state = await service().set(true, level === undefined ? undefined : Math.min(1, level))
+      lastLevel = level
+      return state
     },
 
     async toggle(): Promise<TorchState> {
       if (!supports()) throw new Error("unavailable")
-      return await service().toggle()
+      return (await service().state()).on ? await torch.set(false) : await torch.set(true, lastLevel)
     },
 
     onChange(listener: ChangeListener): () => void {

@@ -11,7 +11,7 @@
 //
 //  Android has no getter for the torch's mode — the camera service tells it through a TorchCallback,
 //  which answers at once when it is registered: the session registers one at its first call and
-//  answers state() / toggle() once the first report is in (0.5 s at most). A camera that holds the
+//  answers state() once the first report is in (0.5 s at most). A camera that holds the
 //  flash makes it "unavailable" there: off for the app; set() then rejects BUSY.
 //
 //  Calls and the TorchCallback both run on the main thread (its handler), and so does the state.
@@ -45,8 +45,6 @@ class TorchService(private val context: Context, private val events: TorchEvents
     private var lit: Boolean? = null
     /** The strength the flash is at, when Android 13+ said so. */
     private var strength: Int? = null
-    /** The level this session last lit the torch at (null: the default): what toggle() lights again. */
-    private var lastLevel: Double? = null
     private var lastSent: TorchState? = null
     private val waiting = mutableListOf<() -> Unit>()
     private var callback: CameraManager.TorchCallback? = null
@@ -156,18 +154,8 @@ class TorchService(private val context: Context, private val events: TorchEvents
         whenKnown(flash) { reply.resolve(current(flash)) }
     }
 
+    /** Light the flash at `level` ((0, 1] — the wrapper's; null: its default strength), or turn it off. */
     override fun set(on: Boolean, level: Double?, reply: Reply<TorchState, TorchCode>) {
-        val wanted = level?.coerceAtMost(1.0)
-        light(on && (wanted == null || wanted > 0.0), wanted, reply)
-    }
-
-    override fun toggle(reply: Reply<TorchState, TorchCode>) {
-        val flash = flash ?: return reply.reject(TorchCode.UNAVAILABLE)
-        whenKnown(flash) { light(lit != true, lastLevel, reply) }
-    }
-
-    /** Light the flash at `level` (null: its default strength), or turn it off. */
-    private fun light(on: Boolean, level: Double?, reply: Reply<TorchState, TorchCode>) {
         val flash = flash ?: return reply.reject(TorchCode.UNAVAILABLE)
         val manager = manager ?: return reply.reject(TorchCode.UNAVAILABLE)
         track(flash)
@@ -183,7 +171,6 @@ class TorchService(private val context: Context, private val events: TorchEvents
             } else {
                 manager.setTorchMode(flash.id, true)
             }
-            lastLevel = level
             reply.resolve(TorchState(true, if (flash.dimmable) step.toDouble() / flash.maxLevel else 1.0))
         } catch (e: CameraAccessException) {
             reply.reject(when (e.reason) {
@@ -208,6 +195,10 @@ class TorchService(private val context: Context, private val events: TorchEvents
         main.removeCallbacksAndMessages(null)
         callback?.let { cb -> try { manager?.unregisterTorchCallback(cb) } catch (e: Exception) {} }
         callback = null
+        // A state() still waiting for the first report is answered, not dropped: off.
+        if (lit == null) lit = false
+        val calls = waiting.toList()
         waiting.clear()
+        calls.forEach { it() }
     }
 }

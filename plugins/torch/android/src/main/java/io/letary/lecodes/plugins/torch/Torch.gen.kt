@@ -97,22 +97,15 @@ interface TorchPlugin {
     fun state(reply: Reply<TorchState, TorchCode>)
 
     /**
-     * Light the torch (`on`) at `level` — (0, 1], clamped; 0 or less turns it off; left out, the
-     * platform's default brightness (iOS: full, Android: the flash's default strength) — or turn it
-     * off. Resolves with the state the torch is in after it.
+     * Light the torch (`on`) at `level` — a fraction of full brightness, (0, 1]; left out, the
+     * platform's default (iOS: full, Android: the flash's default strength) — or turn it off (`level`
+     * is not read then). Resolves with the state the torch is in after it.
      * `unavailable`: no torch, or the system holds it back (iOS: the LED is too hot). `busy`: the
      * camera holds it (Android: another app, or a camera of this one, has it open). `failed`:
      * anything else.
      * Rejects with UNAVAILABLE / BUSY / FAILED.
      */
     fun set(on: Boolean, level: Double?, reply: Reply<TorchState, TorchCode>)
-
-    /**
-     * Turn a lit torch off, a dark one on at the level this session last lit it at (else the
-     * default). Resolves with the state after it.
-     * Rejects with UNAVAILABLE / BUSY / FAILED.
-     */
-    fun toggle(reply: Reply<TorchState, TorchCode>)
 
     /**
      * The app began (true) or stopped (false) listening to `change`, a `@lazy` event: start or stop what
@@ -157,9 +150,6 @@ internal object TorchGlue {
                 val a0 = (if (0 < n) r.bool() else null) ?: return settle.reject("bad arguments — Torch.set: on")
                 val a1 = if (1 < n && !r.isNull()) (r.f64() ?: return settle.reject("bad arguments — Torch.set: level")) else { if (1 < n) r.skip(); null }
                 plugin.set(a0, a1, Reply<TorchState, TorchCode>(settle) { v, w -> v.write(w) })
-            }
-            "toggle" -> {
-                plugin.toggle(Reply<TorchState, TorchCode>(settle) { v, w -> v.write(w) })
             }
             "\$listen" -> {
                 // The wrapper's own call: the app began or stopped listening to a @lazy event.

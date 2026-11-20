@@ -11,8 +11,8 @@
 //
 //  A level of 1 asks for AVCaptureDevice.maxAvailableTorchLevel — what the LED can give now (less
 //  than 1 when it is warm); a level a warm LED cannot give lights it at what it can. set() answers
-//  with what was asked; the device settles a moment later, and `change` (KVO on isTorchActive and
-//  torchLevel, while the app listens) carries what it settled at. Calls arrive on the main thread,
+//  with the level the device reports; `change` (KVO on isTorchActive and torchLevel, while the app
+//  listens) carries what it settles at after. Calls arrive on the main thread,
 //  KVO on any: `change` is sent from where it comes.
 //
 
@@ -25,8 +25,6 @@ public final class TorchService: TorchPlugin {
     private let events: TorchEvents
     /// The torch's device, looked up at the first call (a lookup prompts nothing, but is not free).
     private lazy var device: AVCaptureDevice? = TorchService.findTorch()
-    /// The level this session last lit the torch at (nil: the default): what toggle() lights again.
-    private var lastLevel: Float?
     private var observations: [NSKeyValueObservation] = []
     private let lock = NSLock()
     private var lastSent: TorchState?
@@ -64,17 +62,8 @@ public final class TorchService: TorchPlugin {
         reply.resolve(Self.state(of: device))
     }
 
+    /// Light the torch at `level` ((0, 1] — the wrapper's; nil: full), or turn it off.
     public func set(_ on: Bool, _ level: Double?, _ reply: Reply<TorchState, TorchCode>) {
-        light(on && (level ?? 1) > 0, level.map { Float(min($0, 1)) }, reply)
-    }
-
-    public func toggle(_ reply: Reply<TorchState, TorchCode>) {
-        guard let device else { return reply.reject(.unavailable) }
-        light(!device.isTorchActive, lastLevel, reply)
-    }
-
-    /// Light the torch at `level` (nil: full), or turn it off.
-    private func light(_ on: Bool, _ level: Float?, _ reply: Reply<TorchState, TorchCode>) {
         guard let device, device.hasTorch else { return reply.reject(.unavailable) }
         if on && !device.isTorchAvailable { return reply.reject(.unavailable) }   // the LED is too hot
         do {
@@ -84,15 +73,16 @@ public final class TorchService: TorchPlugin {
                 device.torchMode = .off
                 return reply.resolve(TorchState(on: false, level: 0))
             }
-            let wanted = level ?? 1
+            let wanted = Float(level ?? 1)
             do {
                 try device.setTorchModeOn(level: wanted >= 1 ? AVCaptureDevice.maxAvailableTorchLevel : wanted)
             } catch {
                 // More than a warm LED can give: light it at what it can.
                 try device.setTorchModeOn(level: AVCaptureDevice.maxAvailableTorchLevel)
             }
-            lastLevel = level
-            reply.resolve(TorchState(on: true, level: Double(min(wanted, 1))))
+            // What the LED took (a warm one: less than asked); the level asked while it has no say yet.
+            let taken = device.torchLevel
+            reply.resolve(TorchState(on: true, level: Double(taken > 0 ? taken : min(wanted, 1))))
         } catch {
             if !device.isTorchAvailable { return reply.reject(.unavailable) }
             reply.reject(.failed)

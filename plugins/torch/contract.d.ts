@@ -46,16 +46,12 @@ export interface Torch extends Service<"torch", TorchParams, TorchEvents> {
   info(): Promise<TorchInfo>
   /** Whether the torch is lit, and how bright. Off on a device without one. Never rejects. */
   state(): Promise<TorchState>
-  /** Light the torch (`on`) at `level` — (0, 1], clamped; 0 or less turns it off; left out, the
-   *  platform's default brightness (iOS: full, Android: the flash's default strength) — or turn it
-   *  off. Resolves with the state the torch is in after it.
+  /** Light the torch (`on`) at `level` — a fraction of full brightness, (0, 1]; left out, the
+   *  platform's default (iOS: full, Android: the flash's default strength) — or turn it off (`level`
+   *  is not read then). Resolves with the state the torch is in after it.
    *  `unavailable`: no torch, or the system holds it back (iOS: the LED is too hot). `busy`: the
    *  camera holds it (Android: another app, or a camera of this one, has it open). `failed`:
    *  anything else.
    *  @rejects unavailable busy failed */
   set(on: boolean, level?: f64): Promise<TorchState>
-  /** Turn a lit torch off, a dark one on at the level this session last lit it at (else the
-   *  default). Resolves with the state after it.
-   *  @rejects unavailable busy failed */
-  toggle(): Promise<TorchState>
 }
