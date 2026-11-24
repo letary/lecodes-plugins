@@ -7,7 +7,8 @@
 //     notifications sent OUTSIDE a push channel — a push key, `lecodes pn send` — as events;
 //   - the SDK's transport and its push-channel proxies, through the runtime `__pushEnable()`
 //     installs (lecodes-sdk/plugin `_pushRuntime`): the device's address for the `x-lecodes-push`
-//     header, the registration the server asks for, the handlers of each `pushChannel()` export.
+//     header, the registration a channel's `subscribe()` makes, the handlers of each
+//     `pushChannel()` export.
 //     The compiler puts `__pushEnable()` at the top of every server stub of a project with push
 //     channels, so an app that has none never carries this module.
 //
@@ -121,19 +122,26 @@ const built = /*#__PURE__*/ (() => {
     }
   }
 
-  // The server asked this device to register (the envelope's `push: true`): once per run. The prompt
-  // appears only when the permission was never asked; a refusal is final (the OS asks no twice).
-  let asked = false
-  const requestRegister = (): void => {
-    if (asked || !supported()) return
-    asked = true
-    service().getStatus()
-      .then(st => {
-        learn(st.address)
-        if (st.permission === "denied") return
-        return service().register().then(r => learn(r.address))
-      })
-      .catch(() => {})
+  // The app subscribes to a push channel (`subscribe()`): the permission — the dialog, the first time — and
+  // the registration. null = refused (the OS asks no twice) or no push on this host; a subscription is not
+  // made then, and that is not an error of the app.
+  const registerQuietly = async (): Promise<string | null> => {
+    if (!supported()) return null
+    try {
+      const st = await service().getStatus()
+      learn(st.address)
+      if (st.permission === "denied") return null
+      learn((await service().register()).address)
+      return address
+    } catch {
+      return null
+    }
+  }
+  // The address of an earlier registration, without a prompt.
+  const known = async (): Promise<string | null> => {
+    if (address || !supported()) return address
+    try { learn((await service().getStatus()).address) } catch { /* no service answer: no address */ }
+    return address
   }
 
   const push = {
@@ -171,7 +179,8 @@ const built = /*#__PURE__*/ (() => {
 
   const runtime = {
     address: (): string | null => address,
-    requestRegister,
+    register: registerQuietly,
+    known,
     on: listen,
   }
   return { push, runtime }
@@ -182,9 +191,10 @@ const built = /*#__PURE__*/ (() => {
  * service — check it before offering notification features.
  *
  * A project with a backend needs none of this: its `pushChannel()` exports are heard with their
- * own `onTap` / `onMessage`, and the device is registered when the server asks (after a sign-in).
- * `Push` is for the rest — a permission asked at a moment of the app's choosing, and the
- * notifications sent outside a channel (a push key, `lecodes pn send`).
+ * own `onTap` / `onMessage`, and the device is registered by the channel's `subscribe()`.
+ * `Push` is for the rest — a project without push channels that only
+ * wants the device registered (for the push console's campaigns), and the notifications sent
+ * outside a channel (a push key, `lecodes pn send`).
  */
 export const Push: {
   /** Whether this host registered a "push" service. */
