@@ -15,10 +15,10 @@
 //     channel and the untyped ones are handled); every other one shows the system notification.
 //   - A payload's `url` is the app's to route from the "tap" event / getLaunch — it does NOT ride
 //     the deep-link path (`app.launchUrl`, the "url" event). The only url the engine is seeded with
-//     is the launcher's `https://le.codes/qr/<projectUuid>`, which opens the project.
+//     is the relay's `projectUrl` (else the launcher's `https://le.codes/qr/<projectUuid>`), which opens the project.
 //
 //  Wire payload (the FCM data map, all strings — buildFcmBody's shape): projectUuid, projectName?,
-//  title, body?, channel?, url?, data? (a JSON object, serialized), badge?. `projectUuid` /
+//  projectUrl?, title, body?, channel?, url?, data? (a JSON object, serialized), badge?. `projectUuid` /
 //  `projectName` route the display and the taps and are stripped before the payload reaches JS;
 //  `channel` is the push channel it was sent through (absent = sent outside one).
 //
@@ -248,10 +248,19 @@ object PushManager {
             emitToSessions { it.tap(tap) }
         } else {
             launchPayload = payload   // the new world reads it via getLaunch()
-            e.openLauncher("https://le.codes/qr/$projectUuid")
+            e.openLauncher(projectLink(payload))
         }
         return true
     }
+
+    /** The link that opens a notification's project in the launcher: the relay's own word
+     *  (`projectUrl` — a le.codes QR link, a hub.le.codes project page), which only the relay
+     *  stamps, from the project it authenticated. A relay older than the field says none: the
+     *  le.codes link of the project's uuid, as before it. The uuid stays the IDENTITY whatever
+     *  the link opens: getLaunch serves the payload only to the world of that uuid. */
+    fun projectLink(payload: JSONObject): String =
+        payload.optString("projectUrl").takeIf { it.startsWith("https://") }
+            ?: "https://le.codes/qr/${payload.optString("projectUuid")}"
 
     // ── payload shapes ───────────────────────────────────────────────────────
 
@@ -262,6 +271,7 @@ object PushManager {
             .put("projectUuid", uuid)
             .put("title", data["title"] ?: "")
         data["projectName"]?.let { payload.put("projectName", it) }
+        data["projectUrl"]?.takeIf { it.isNotEmpty() }?.let { payload.put("projectUrl", it) }
         data["channel"]?.takeIf { it.isNotEmpty() }?.let { payload.put("channel", it) }
         data["body"]?.let { payload.put("body", it) }
         data["url"]?.let { payload.put("url", it) }

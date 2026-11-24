@@ -11,7 +11,7 @@
 //  dev bundles, generated shells) get "unavailable".
 //
 //  Wire payload (APNs userInfo): { aps: { alert: { title, body? }, badge?, sound },
-//  lecodes: { projectUuid, channel?, url?, data? } } — `lecodes.projectUuid` is stamped by the
+//  lecodes: { projectUuid, projectUrl?, channel?, url?, data? } } — `lecodes.projectUuid` is stamped by the
 //  backend and routes multi-tenant display/taps; it is stripped before payloads reach JS.
 //  `lecodes.channel` is the push channel the notification was sent through (absent = sent
 //  outside one): it reaches JS as `PushPayload.channel`, and decides with the world's
@@ -20,7 +20,7 @@
 //
 //  A payload's `url` is the app's to route (the "tap" event / getLaunch): it does NOT ride the
 //  deep-link path (`app.launchUrl`, the "url" event). The only url the engine is seeded with is
-//  the launcher's `https://le.codes/qr/<projectUuid>`, which opens the project.
+//  the relay's `lecodes.projectUrl` (else the launcher's `https://le.codes/qr/<projectUuid>`), which opens the project.
 //
 
 import Foundation
@@ -274,6 +274,12 @@ public final class PushManager: LeCodesNotificationHandler {
     /// One parsed notification. `appPayload` is what JS sees (the routing field stripped).
     private struct Payload {
         let projectUuid: String
+        /// The link that opens the project in the launcher: the relay's own word
+        /// (`lecodes.projectUrl` — a le.codes QR link, a hub.le.codes project page), which only the
+        /// relay stamps, from the project it authenticated. A relay older than the field says none:
+        /// the le.codes link of the uuid, as before it. The uuid stays the IDENTITY whatever the
+        /// link opens: getLaunch serves the payload only to the world of that uuid.
+        let projectLink: String
         let appPayload: PushPayload
     }
 
@@ -295,7 +301,8 @@ public final class PushManager: LeCodesNotificationHandler {
         app.channel = lecodes["channel"] as? String
         app.url = lecodes["url"] as? String
         app.data = lecodes["data"] as? [String: Any]
-        return Payload(projectUuid: uuid, appPayload: app)
+        let stamped = (lecodes["projectUrl"] as? String).flatMap { $0.hasPrefix("https://") ? $0 : nil }
+        return Payload(projectUuid: uuid, projectLink: stamped ?? "https://le.codes/qr/\(uuid)", appPayload: app)
     }
 
     /// `connectionOptions.notificationResponse` (buffered by LeCodesAppHooks) — the app was
@@ -307,7 +314,7 @@ public final class PushManager: LeCodesNotificationHandler {
               let payload = parse(response.notification.request.content.userInfo) else { return }
         launchPayload = payload
         coldStartHandledId = response.notification.request.identifier
-        engine.setLaunchUrl("https://le.codes/qr/\(payload.projectUuid)")
+        engine.setLaunchUrl(payload.projectLink)
     }
 
     /// The notification this launch was started by, once the cold-start path has consumed it.
@@ -361,7 +368,7 @@ public final class PushManager: LeCodesNotificationHandler {
                 deliver { $0.tap(payload.appPayload) }
             } else {
                 launchPayload = payload
-                engine.openLauncher(withUrl: "https://le.codes/qr/\(payload.projectUuid)")
+                engine.openLauncher(withUrl: payload.projectLink)
             }
             completionHandler()
         }
