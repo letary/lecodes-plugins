@@ -9,7 +9,7 @@ export const NAME = "audioRecorder"
 /** The contract's version: the highest `@since` of its members. */
 export const VERSION = 1
 
-const _toRecording = (w: any): Recording => ({ ...w, file: _toFile(w.file) })
+const _toRecording = (w: any): Recording => ({ ...w, file: w.file == null ? null : _toFile(w.file) })
 
 // ---- the wire, call by call ----------------------------------------------------------------------
 
@@ -19,7 +19,7 @@ const _toRecording = (w: any): Recording => ({ ...w, file: _toFile(w.file) })
 export const start = (service: ServiceChannel<AudioRecorderEvents>, options?: RecordOptions): Promise<void> =>
   service._call("start", [options])
 
-/** Pause: the level stops, the duration does not grow. Rejects "notRecording" before a start
+/** Pause: the events stop, the duration does not grow. Rejects "notRecording" before a start
  *  or after the recording ended.
  *  Rejects with "notRecording" / "failed". */
 export const pause = (service: ServiceChannel<AudioRecorderEvents>): Promise<void> =>
@@ -53,13 +53,13 @@ export const supports = (method?: Method): boolean =>
 
 /** The service "audioRecorder" with the wire's methods as its own. */
 export class AudioRecorderBase extends ServiceChannel<AudioRecorderEvents> {
-  constructor(params: AudioRecorderParams = {}) { super("AudioRecorder", NAME, params) }
+  constructor(params: AudioRecorderParams = {}) { super("AudioRecorder", NAME, params, undefined, ["pitch"]) }
 
   /** Start recording. One recording per session: a second start rejects "busy".
    *  Needs the "microphone" permission: the host asks before the call, "denied" when refused.
    *  Rejects with "denied" / "busy" / "failed". */
   start(options?: RecordOptions): Promise<void> { return start(this, options) }
-  /** Pause: the level stops, the duration does not grow. Rejects "notRecording" before a start
+  /** Pause: the events stop, the duration does not grow. Rejects "notRecording" before a start
    *  or after the recording ended.
    *  Rejects with "notRecording" / "failed". */
   pause(): Promise<void> { return pause(this) }

@@ -17,16 +17,26 @@ public struct AudioRecorderParams {
 public struct RecordOptions {
     /// Kilobits per second of the encoded audio. Default 64 — speech; 128 for music.
     public var bitrate: Double?
-    /// Samples per second. Default 44100; the browser keeps its own.
+    /// Samples per second. Default 44100; the browser and iOS keep the device's own.
     public var sampleRate: Double?
     /// Stop on its own after this many ms: `ended` fires with "maxDuration", `stop()` then returns
     /// the recording. Default: no limit.
     public var maxDuration: Double?
+    /// Write the audio file. Default true; false = only the events (`stop()` returns no file).
+    public var file: Bool?
+    /// The microphone with as little of the system's voice processing (noise suppression, gain
+    /// control, echo cancellation) as the device allows: music, a tuner, singing. Default false.
+    public var raw: Bool?
+    /// How many times a second `level` and `pitch` fire. Default 10, at most 50.
+    public var rate: Double?
 
-    public init(bitrate: Double? = nil, sampleRate: Double? = nil, maxDuration: Double? = nil) {
+    public init(bitrate: Double? = nil, sampleRate: Double? = nil, maxDuration: Double? = nil, file: Bool? = nil, raw: Bool? = nil, rate: Double? = nil) {
         self.bitrate = bitrate
         self.sampleRate = sampleRate
         self.maxDuration = maxDuration
+        self.file = file
+        self.raw = raw
+        self.rate = rate
     }
 
     init?(wire: WireIn) {
@@ -52,18 +62,40 @@ public struct RecordOptions {
         } else {
             self.maxDuration = nil
         }
+        let m3 = wire["file", 3]
+        if m3.isPresent {
+            guard let v = m3.bool else { return nil }
+            self.file = v
+        } else {
+            self.file = nil
+        }
+        let m4 = wire["raw", 4]
+        if m4.isPresent {
+            guard let v = m4.bool else { return nil }
+            self.raw = v
+        } else {
+            self.raw = nil
+        }
+        let m5 = wire["rate", 5]
+        if m5.isPresent {
+            guard let v = m5.f64 else { return nil }
+            self.rate = v
+        } else {
+            self.rate = nil
+        }
     }
 }
 
 public struct Recording {
-    /// The audio file — `recording.m4a` / `.webm` / `.mp4` by the encoder.
-    public var file: PluginFile
-    /// "audio/mp4", "audio/webm", … — the container, without codec parameters.
+    /// The audio file — `recording.m4a` / `.webm` / `.mp4` by the encoder; null when the recording
+    /// was started with `file: false`.
+    public var file: PluginFile?
+    /// "audio/mp4", "audio/webm", … — the container, without codec parameters; "" without a file.
     public var mimeType: String
     /// Seconds of audio (the pauses left out).
     public var duration: Double
 
-    public init(file: PluginFile, mimeType: String, duration: Double) {
+    public init(file: PluginFile? = nil, mimeType: String, duration: Double) {
         self.file = file
         self.mimeType = mimeType
         self.duration = duration
@@ -71,7 +103,8 @@ public struct Recording {
 
     func write(to w: WireOut) {
         w.beginObject(3)
-        w.key("file"); self.file.write(to: w)
+        w.key("file")
+        if let v0 = self.file { v0.write(to: w) } else { w.null() }
         w.key("mimeType"); w.string(self.mimeType)
         w.key("duration"); w.f64(self.duration)
         w.end()
@@ -94,16 +127,50 @@ public enum AudioRecorderCode: String, PluginCode {
     case notRecording
 }
 
+/// The `@lazy` events of "audioRecorder" the app listens to: what its events ask before they send, what
+/// the glue's `$listen` sets. Any thread.
+final class AudioRecorderObserved {
+    private let lock = NSLock()
+    private var events: Set<String> = []
+
+    func has(_ event: String) -> Bool {
+        lock.lock(); defer { lock.unlock() }
+        return events.contains(event)
+    }
+
+    /// Whether that changed anything: the plugin is told once.
+    func set(_ event: String, _ on: Bool) -> Bool {
+        lock.lock(); defer { lock.unlock() }
+        return on ? events.insert(event).inserted : events.remove(event) != nil
+    }
+}
+
 /// The events of "audioRecorder": what the plugin sends the app. Any thread.
 public struct AudioRecorderEvents {
     let channel: ServiceChannel
+    let observed = AudioRecorderObserved()
 
-    /// The input level, 0..1, about ten times a second while recording (not while paused): a meter,
-    /// a waveform.
+    /// The volume, 0..1: the loudest sample since the previous event, `rate` times a second while
+    /// recording (not while paused): a meter, a waveform.
     public func level(value: Double) {
         self.channel.emit("level") { w in
             w.beginObject(1)
             w.key("value"); w.f64(value)
+            w.end()
+        }
+    }
+
+    /// Whether the app listens to `pitch`, a `@lazy` event: while false, `pitch()` sends nothing.
+    public var pitchObserved: Bool { observed.has("pitch") }
+
+    /// The note that is heard, on the tick of `level`: `frequency` in Hz, 0 when there is no clear
+    /// note (silence, noise); `clarity` 0..1, how periodic the sound is. One note at a time, 60–1500 Hz.
+    public func pitch(frequency: Double, clarity: Double) {
+        guard pitchObserved else { return }
+        self.channel.emit("pitch") { w in
+            w.beginObject(2)
+            w.key("frequency"); w.f64(frequency)
+            w.key("clarity"); w.f64(clarity)
             w.end()
         }
     }
@@ -128,7 +195,7 @@ public protocol AudioRecorderPlugin: AnyObject {
     /// Needs the microphone permission: asked by the glue before the call, .denied when refused.
     /// Rejects with .denied / .busy / .failed.
     func start(_ options: RecordOptions?, _ reply: Reply<Void, AudioRecorderCode>)
-    /// Pause: the level stops, the duration does not grow. Rejects "notRecording" before a start
+    /// Pause: the events stop, the duration does not grow. Rejects "notRecording" before a start
     /// or after the recording ended.
     /// Rejects with .notRecording / .failed.
     func pause(_ reply: Reply<Void, AudioRecorderCode>)
@@ -140,6 +207,9 @@ public protocol AudioRecorderPlugin: AnyObject {
     func stop(_ reply: Reply<Recording, AudioRecorderCode>)
     /// Stop and discard. Nothing to discard is not an error.
     func cancel(_ reply: Reply<Void, AudioRecorderCode>)
+    /// The app began (true) or stopped (false) listening to `pitch`, a `@lazy` event: start or stop what
+    /// produces it. Not called at the end — `close()` stops everything.
+    func pitchObserved(_ observed: Bool)
 
     /// The session closed (the app's close, the world's teardown): stop what it started.
     func close()
@@ -159,7 +229,8 @@ public enum AudioRecorderChannel {
     /// no I/O: that belongs to the first call that needs it.
     public static func register(in engine: LeCodesEngine, _ make: @escaping (AudioRecorderParams, AudioRecorderEvents) -> AudioRecorderPlugin) {
         engine.registerService(name, version: Int32(version)) { params, channel in
-            AudioRecorderGlue(make(WireIn.of(params, { AudioRecorderParams(wire: $0) }) ?? AudioRecorderParams(), AudioRecorderEvents(channel: channel)), engine.permissions)
+            let events = AudioRecorderEvents(channel: channel)
+            return AudioRecorderGlue(make(WireIn.of(params, { AudioRecorderParams(wire: $0) }) ?? AudioRecorderParams(), events), engine.permissions, events.observed)
         }
     }
 }
@@ -169,10 +240,13 @@ final class AudioRecorderGlue: WireServiceInstance {
     private let plugin: AudioRecorderPlugin
     /// The host's permission service: what a method tagged `@permission` is gated by.
     private let permissions: Permissions
+    /// The `@lazy` events the app listens to: the events' own, set here.
+    private let observed: AudioRecorderObserved
 
-    init(_ plugin: AudioRecorderPlugin, _ permissions: Permissions) {
+    init(_ plugin: AudioRecorderPlugin, _ permissions: Permissions, _ observed: AudioRecorderObserved) {
         self.plugin = plugin
         self.permissions = permissions
+        self.observed = observed
     }
 
     func call(_ method: String, wire args: WireIn, _ settle: ChannelSettle) {
@@ -197,6 +271,14 @@ final class AudioRecorderGlue: WireServiceInstance {
             plugin.stop(Reply<Recording, AudioRecorderCode>(settle) { v, w in v.write(to: w) })
         case "cancel":
             plugin.cancel(Reply<Void, AudioRecorderCode>(settle))
+        case "$listen":
+            // The wrapper's own call: the app began or stopped listening to a @lazy event.
+            guard let event = args[0].string, let on = args[1].bool else { return settle.reject("bad arguments — $listen") }
+            switch event {
+            case "pitch": if observed.set(event, on) { plugin.pitchObserved(on) }
+            default: return settle.reject("Unknown event: \(event)")
+            }
+            settle.resolve()
         default:
             settle.reject("Unknown method: \(method)")
         }

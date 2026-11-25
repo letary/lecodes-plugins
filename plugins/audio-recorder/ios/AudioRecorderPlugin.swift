@@ -1,8 +1,8 @@
 //
 //  AudioRecorderPlugin.swift — lecodes-plugins/audio-recorder
 //
-//  The "audioRecorder" service: audio recording to a file over AVAudioRecorder. A session is one
-//  recording. The microphone permission is the contract's (`@permission microphone`): the generated
+//  The "audioRecorder" service: the microphone — a recording to a file, the volume and the note
+//  that are heard meanwhile (AVAudioEngine). A session is one recording. The microphone permission is the contract's (`@permission microphone`): the generated
 //  glue asks the host before `start` reaches the service; the manifest merges the usage string.
 //
 

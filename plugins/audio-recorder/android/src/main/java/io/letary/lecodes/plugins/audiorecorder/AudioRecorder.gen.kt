@@ -30,13 +30,22 @@ class AudioRecorderParams {
 data class RecordOptions(
     /** Kilobits per second of the encoded audio. Default 64 — speech; 128 for music. */
     val bitrate: Double? = null,
-    /** Samples per second. Default 44100; the browser keeps its own. */
+    /** Samples per second. Default 44100; the browser and iOS keep the device's own. */
     val sampleRate: Double? = null,
     /**
      * Stop on its own after this many ms: `ended` fires with "maxDuration", `stop()` then returns
      * the recording. Default: no limit.
      */
     val maxDuration: Double? = null,
+    /** Write the audio file. Default true; false = only the events (`stop()` returns no file). */
+    val file: Boolean? = null,
+    /**
+     * The microphone with as little of the system's voice processing (noise suppression, gain
+     * control, echo cancellation) as the device allows: music, a tuner, singing. Default false.
+     */
+    val raw: Boolean? = null,
+    /** How many times a second `level` and `pitch` fire. Default 10, at most 50. */
+    val rate: Double? = null,
 ) {
     companion object {
         internal fun read(r: PackedReader): RecordOptions? {
@@ -45,30 +54,40 @@ data class RecordOptions(
             var m0: Double? = null
             var m1: Double? = null
             var m2: Double? = null
+            var m3: Boolean? = null
+            var m4: Boolean? = null
+            var m5: Double? = null
             repeat(n) {
                 when (r.key()) {
                     "bitrate" -> if (r.isNull()) r.skip() else m0 = r.f64() ?: return null
                     "sampleRate" -> if (r.isNull()) r.skip() else m1 = r.f64() ?: return null
                     "maxDuration" -> if (r.isNull()) r.skip() else m2 = r.f64() ?: return null
+                    "file" -> if (r.isNull()) r.skip() else m3 = r.bool() ?: return null
+                    "raw" -> if (r.isNull()) r.skip() else m4 = r.bool() ?: return null
+                    "rate" -> if (r.isNull()) r.skip() else m5 = r.f64() ?: return null
                     else -> r.skip()
                 }
             }
-            return RecordOptions(bitrate = m0, sampleRate = m1, maxDuration = m2)
+            return RecordOptions(bitrate = m0, sampleRate = m1, maxDuration = m2, file = m3, raw = m4, rate = m5)
         }
     }
 }
 
 data class Recording(
-    /** The audio file — `recording.m4a` / `.webm` / `.mp4` by the encoder. */
-    val file: PluginFile,
-    /** "audio/mp4", "audio/webm", … — the container, without codec parameters. */
+    /**
+     * The audio file — `recording.m4a` / `.webm` / `.mp4` by the encoder; null when the recording
+     * was started with `file: false`.
+     */
+    val file: PluginFile? = null,
+    /** "audio/mp4", "audio/webm", … — the container, without codec parameters; "" without a file. */
     val mimeType: String,
     /** Seconds of audio (the pauses left out). */
     val duration: Double,
 ) {
     internal fun write(w: PackedWriter) {
         w.beginObject()
-        w.key("file"); this.file.write(w)
+        w.key("file")
+        this.file.let { v0 -> if (v0 != null) v0.write(w) else w.nil() }
         w.key("mimeType"); w.string(this.mimeType)
         w.key("duration"); w.f64(this.duration)
         w.end()
@@ -94,8 +113,8 @@ enum class AudioRecorderCode(override val code: String) : PluginCode {
 /** The events of "audioRecorder": what the plugin sends the app. Any thread. */
 class AudioRecorderEvents(private val channel: PluginEmit) {
     /**
-     * The input level, 0..1, about ten times a second while recording (not while paused): a meter,
-     * a waveform.
+     * The volume, 0..1: the loudest sample since the previous event, `rate` times a second while
+     * recording (not while paused): a meter, a waveform.
      */
     fun level(value: Double) {
         val w = PackedWriter()
@@ -103,6 +122,25 @@ class AudioRecorderEvents(private val channel: PluginEmit) {
         w.key("value"); w.f64(value)
         w.end()
         this.channel.emit("level", w.bytes())
+    }
+
+    /** Whether the app listens to `pitch`, a `@lazy` event: while false, `pitch()` sends nothing. */
+    @Volatile
+    var pitchObserved: Boolean = false
+        internal set
+
+    /**
+     * The note that is heard, on the tick of `level`: `frequency` in Hz, 0 when there is no clear
+     * note (silence, noise); `clarity` 0..1, how periodic the sound is. One note at a time, 60–1500 Hz.
+     */
+    fun pitch(frequency: Double, clarity: Double) {
+        if (!pitchObserved) return
+        val w = PackedWriter()
+        w.beginObject()
+        w.key("frequency"); w.f64(frequency)
+        w.key("clarity"); w.f64(clarity)
+        w.end()
+        this.channel.emit("pitch", w.bytes())
     }
 
     /**
@@ -134,7 +172,7 @@ interface AudioRecorderPlugin {
     fun start(options: RecordOptions?, reply: Reply<Unit, AudioRecorderCode>)
 
     /**
-     * Pause: the level stops, the duration does not grow. Rejects "notRecording" before a start
+     * Pause: the events stop, the duration does not grow. Rejects "notRecording" before a start
      * or after the recording ended.
      * Rejects with NOT_RECORDING / FAILED.
      */
@@ -153,6 +191,12 @@ interface AudioRecorderPlugin {
     /** Stop and discard. Nothing to discard is not an error. */
     fun cancel(reply: Reply<Unit, AudioRecorderCode>)
 
+    /**
+     * The app began (true) or stopped (false) listening to `pitch`, a `@lazy` event: start or stop what
+     * produces it. Not called at the end — `close()` stops everything.
+     */
+    fun pitchObserved(observed: Boolean)
+
     /** The session closed (the app's close, the world's teardown): stop what it started. */
     fun close() {}
 }
@@ -168,15 +212,16 @@ object AudioRecorderChannel {
      *  prompt, no I/O: that belongs to the first call that needs it. */
     fun register(engine: LecodesEngine, make: (params: AudioRecorderParams, events: AudioRecorderEvents) -> AudioRecorderPlugin) {
         engine.registerService(NAME, VERSION) { params, channel ->
-            val plugin = make(AudioRecorderParams.read(Wire.reader(params)) ?: AudioRecorderParams(), AudioRecorderEvents { event, packed -> channel.emitPacked(event, packed) })
-            Services.Instance(onCall = { call -> AudioRecorderGlue.call(plugin, engine.permissions, call.method, call.reader(), call) }, onClose = { plugin.close() })
+            val events = AudioRecorderEvents { event, packed -> channel.emitPacked(event, packed) }
+            val plugin = make(AudioRecorderParams.read(Wire.reader(params)) ?: AudioRecorderParams(), events)
+            Services.Instance(onCall = { call -> AudioRecorderGlue.call(plugin, events, engine.permissions, call.method, call.reader(), call) }, onClose = { plugin.close() })
         }
     }
 }
 
 /** Reads a call off the wire and hands it to the plugin; a malformed call never reaches it. */
 internal object AudioRecorderGlue {
-    fun call(plugin: AudioRecorderPlugin, permissions: Permissions, method: String, r: PackedReader, settle: ChannelSettle) {
+    fun call(plugin: AudioRecorderPlugin, events: AudioRecorderEvents, permissions: Permissions, method: String, r: PackedReader, settle: ChannelSettle) {
         val n = r.beginArray()   // the arguments, in their order
         when (method) {
             "start" -> {
@@ -198,6 +243,16 @@ internal object AudioRecorderGlue {
             }
             "cancel" -> {
                 plugin.cancel(Reply<Unit, AudioRecorderCode>(settle, null))
+            }
+            "\$listen" -> {
+                // The wrapper's own call: the app began or stopped listening to a @lazy event.
+                val event = (if (0 < n) r.string() else null) ?: return settle.reject("bad arguments — \$listen: event")
+                val on = (if (1 < n) r.bool() else null) ?: return settle.reject("bad arguments — \$listen: on")
+                when (event) {
+                    "pitch" -> if (events.pitchObserved != on) { events.pitchObserved = on; plugin.pitchObserved(on) }
+                    else -> return settle.reject("Unknown event: $event")
+                }
+                settle.resolve()
             }
             else -> settle.reject("Unknown method: $method")
         }

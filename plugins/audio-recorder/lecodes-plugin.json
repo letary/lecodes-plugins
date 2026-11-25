@@ -3,7 +3,7 @@
   "name": "Audio Recorder",
   "version": "2.0.0",
   "sdk": "^2.0.0",
-  "description": "Audio recording to a file — voice messages (AVAudioRecorder, MediaRecorder, the browser's MediaRecorder). The app's side is AudioRecorder.",
+  "description": "The microphone: a recording to a file (voice messages, music) and what is heard meanwhile — the volume and the note (a tuner, a singing game). The app's side is AudioRecorder.",
   "ios": {
     "module": "LeCodesAudioRecorder",
     "register": "LeCodesAudioRecorderPlugin",

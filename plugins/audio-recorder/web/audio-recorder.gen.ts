@@ -82,11 +82,18 @@ const readAudioRecorderParams = (v: unknown): AudioRecorderParams | undefined =>
 export interface RecordOptions {
   /** Kilobits per second of the encoded audio. Default 64 — speech; 128 for music. */
   bitrate?: number
-  /** Samples per second. Default 44100; the browser keeps its own. */
+  /** Samples per second. Default 44100; the browser and iOS keep the device's own. */
   sampleRate?: number
   /** Stop on its own after this many ms: `ended` fires with "maxDuration", `stop()` then returns
    *  the recording. Default: no limit. */
   maxDuration?: number
+  /** Write the audio file. Default true; false = only the events (`stop()` returns no file). */
+  file?: boolean
+  /** The microphone with as little of the system's voice processing (noise suppression, gain
+   *  control, echo cancellation) as the device allows: music, a tuner, singing. Default false. */
+  raw?: boolean
+  /** How many times a second `level` and `pitch` fire. Default 10, at most 50. */
+  rate?: number
 }
 const readRecordOptions = (v: unknown): RecordOptions | undefined => {
   const o = wire.object(v)
@@ -109,24 +116,46 @@ const readRecordOptions = (v: unknown): RecordOptions | undefined => {
     if (r === undefined) return undefined
     f2 = r
   }
+  let f3: boolean | undefined = undefined
+  if (wire.present(o.file)) {
+    const r = wire.bool(o.file)
+    if (r === undefined) return undefined
+    f3 = r
+  }
+  let f4: boolean | undefined = undefined
+  if (wire.present(o.raw)) {
+    const r = wire.bool(o.raw)
+    if (r === undefined) return undefined
+    f4 = r
+  }
+  let f5: number | undefined = undefined
+  if (wire.present(o.rate)) {
+    const r = wire.f64(o.rate)
+    if (r === undefined) return undefined
+    f5 = r
+  }
   const out: RecordOptions = {}
   if (f0 !== undefined) out.bitrate = f0
   if (f1 !== undefined) out.sampleRate = f1
   if (f2 !== undefined) out.maxDuration = f2
+  if (f3 !== undefined) out.file = f3
+  if (f4 !== undefined) out.raw = f4
+  if (f5 !== undefined) out.rate = f5
   return out
 }
 
 export interface Recording {
-  /** The audio file — `recording.m4a` / `.webm` / `.mp4` by the encoder. */
-  file: PluginFile
-  /** "audio/mp4", "audio/webm", … — the container, without codec parameters. */
+  /** The audio file — `recording.m4a` / `.webm` / `.mp4` by the encoder; null when the recording
+   *  was started with `file: false`. */
+  file: PluginFile | null
+  /** "audio/mp4", "audio/webm", … — the container, without codec parameters; "" without a file. */
   mimeType: string
   /** Seconds of audio (the pauses left out). */
   duration: number
 }
 const writeRecording = (host: PluginHost, v: Recording): unknown => ({
   ...v,
-  file: writeFile(host, v.file),
+  file: (v.file == null ? null : writeFile(host, v.file)),
 })
 
 export type EndReason = "maxDuration" | "interrupted" | "failed"
@@ -144,9 +173,12 @@ export class AudioRecorderError extends Error {
 
 /** The events of "audioRecorder": what the half sends the app. */
 export interface AudioRecorderEvents {
-  /** The input level, 0..1, about ten times a second while recording (not while paused): a meter,
-   *  a waveform. */
+  /** The volume, 0..1: the loudest sample since the previous event, `rate` times a second while
+   *  recording (not while paused): a meter, a waveform. */
   level(payload: { value: number }): void
+  /** The note that is heard, on the tick of `level`: `frequency` in Hz, 0 when there is no clear
+   *  note (silence, noise); `clarity` 0..1, how periodic the sound is. One note at a time, 60–1500 Hz. */
+  pitch(payload: { frequency: number, clarity: number }): void
   /** The recording stopped on its own: the limit (`maxDuration`), an interruption (a call came in),
    *  a failure of the encoder. What was recorded is kept until `stop()` (which returns it) or
    *  `cancel()`. */
@@ -160,7 +192,7 @@ export interface AudioRecorderPlugin {
   /** Start recording. One recording per session: a second start rejects "busy".
    *  Rejects with "denied" / "busy" / "failed". */
   start(options?: RecordOptions): void | Promise<void>
-  /** Pause: the level stops, the duration does not grow. Rejects "notRecording" before a start
+  /** Pause: the events stop, the duration does not grow. Rejects "notRecording" before a start
    *  or after the recording ended.
    *  Rejects with "notRecording" / "failed". */
   pause(): void | Promise<void>
@@ -172,6 +204,9 @@ export interface AudioRecorderPlugin {
   stop(): Recording | Promise<Recording>
   /** Stop and discard. Nothing to discard is not an error. */
   cancel(): void | Promise<void>
+  /** The app began (true) or stopped (false) listening to `pitch`, a `@lazy` event: start or stop what
+   *  produces it. Not called at the end — `close()` stops everything. */
+  pitchObserved(observed: boolean): void
   /** The session closed (the app's close, the world's teardown): stop what it started. */
   close?(): void
 }
@@ -187,8 +222,11 @@ export const AudioRecorderChannel = {
  *  no I/O: that belongs to the first call that needs it. */
 export const registerAudioRecorder = (host: PluginHost, make: (params: AudioRecorderParams, events: AudioRecorderEvents) => AudioRecorderPlugin): void => {
   host.registerService(AudioRecorderChannel.name, (params, channel) => {
+    /** The @lazy events the app listens to. */
+    const observed = new Set<string>()
     const events: AudioRecorderEvents = {
       level: (payload) => channel.emit("level", payload),
+      pitch: (payload) => { if (observed.has("pitch")) channel.emit("pitch", payload) },
       ended: (payload) => channel.emit("ended", payload),
     }
     const plugin = make(readAudioRecorderParams(params) ?? {}, events)
@@ -218,6 +256,17 @@ export const registerAudioRecorder = (host: PluginHost, make: (params: AudioReco
         }
         case "cancel": {
           await plugin.cancel()
+          return undefined
+        }
+        case "$listen": {
+          const event = wire.string(args[0])
+          const on = wire.bool(args[1])
+          if (event === undefined || on === undefined) throw new Error("bad arguments — $listen")
+          if (observed.has(event) === on) return undefined
+          switch (event) {
+            case "pitch": if (on) observed.add(event); else observed.delete(event); plugin.pitchObserved(on); break
+            default: throw new Error(`Unknown event: ${event}`)
+          }
           return undefined
         }
         default: throw new Error(`Unknown method: ${method}`)

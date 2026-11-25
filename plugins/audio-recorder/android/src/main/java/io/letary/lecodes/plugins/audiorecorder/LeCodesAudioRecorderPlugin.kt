@@ -1,8 +1,8 @@
 //
 //  LeCodesAudioRecorderPlugin.kt — lecodes-plugins/audio-recorder
 //
-//  The "audioRecorder" service: audio recording to a file over android.media.MediaRecorder. A
-//  session is one recording. The microphone permission is the contract's (`@permission
+//  The "audioRecorder" service: the microphone — a recording to a file, the volume and the note
+//  that are heard meanwhile (AudioRecord, MediaCodec). A session is one recording. The microphone permission is the contract's (`@permission
 //  microphone`): the generated glue asks the host before `start` reaches the service; the merged
 //  manifest carries RECORD_AUDIO.
 //
