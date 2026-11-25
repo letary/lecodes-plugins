@@ -5,8 +5,19 @@
 //   the window   `size` samples ≈ 46 ms (2047 at 44.1 kHz): the lag runs to one period of the
 //                lowest note (60 Hz), the rest is what the difference is summed over
 //   the range    60–1500 Hz: a voice, a guitar, most instruments (a bass's low strings are below)
-//   no note      the window is quiet (peak under 0.01, −40 dBFS) or nothing in it repeats well
-//                enough (no dip of the normalized difference under 0.15): frequency 0
+//   no note      the window is silent (peak under 0.001, −60 dBFS) or nothing in it repeats well
+//                enough (no dip of the normalized difference under 0.15): frequency 0. The gate
+//                is low on purpose — a quiet source on a raw microphone (an unplugged electric
+//                guitar) has to be heard, and the method does not depend on loudness: noise is
+//                turned away by the dip, not by the gate. A note is found down to about three
+//                times the noise floor; that close to it a single window is up to 50 cents off
+//   the filter   the detector listens through a band: 55 Hz – 2 kHz (FILTER_LOW_HZ / FILTER_HIGH_HZ,
+//                two Butterworth biquads on the stream of samples, before the window). A raw
+//                microphone's hiss is spread over the whole 22 kHz and the room's rumble sits
+//                under the lowest note; a string a few times louder than them is lost without it
+//                (measured on a phone: an unplugged electric guitar 3–10× the room, clarity
+//                0.5–0.8 → no note). The halves filter in their own way — the browser's
+//                BiquadFilterNode, `PitchFilter` in Kotlin and Swift; `level` is never filtered
 //   clarity      1 − the normalized difference at the lag that was picked (or at its lowest point
 //                when no note was found): 1 = perfectly periodic
 
@@ -14,7 +25,10 @@ const LOWEST_HZ = 60
 const HIGHEST_HZ = 1500
 const WINDOW_SECONDS = 0.0464
 const THRESHOLD = 0.15
-const SILENCE = 0.01
+const SILENCE = 0.001
+/** The band the detector listens through (see the notes above). */
+export const FILTER_LOW_HZ = 55
+export const FILTER_HIGH_HZ = 2000
 
 export interface Pitch { frequency: number, clarity: number }
 

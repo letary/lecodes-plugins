@@ -141,10 +141,11 @@ private final class Capture {
     /// The samples of the limit; 0 = none.
     private let maxFrames: Int64
     private let detector: PitchDetector
+    private let filter: PitchFilter
 
     // The queue's:
     private var file: AVAudioFile?
-    /// The newest samples, the last one at the end.
+    /// The newest samples as the detector hears them (filtered), the last one at the end.
     private var window: [Float]
     private var paused = false
     /// Nothing more is kept: the recording ended (by the app or on its own).
@@ -164,6 +165,7 @@ private final class Capture {
         tickFrames = max(1, Int(sampleRate / min(50, max(1, options?.rate ?? 10))))
         maxFrames = Int64((options?.maxDuration ?? 0) / 1000 * sampleRate)
         detector = PitchDetector(sampleRate: sampleRate)
+        filter = PitchFilter(sampleRate: sampleRate)
         window = [Float](repeating: 0, count: detector.size)
         if let url {
             let settings: [String: Any] = [
@@ -216,11 +218,12 @@ private final class Capture {
         if closed || paused { return }
         let n = chunk.count
 
+        let heard = chunk.map { filter.step($0) }
         if n >= window.count {
-            window = Array(chunk[(n - window.count)...])
+            window = Array(heard[(n - window.count)...])
         } else {
             window.removeFirst(n)
-            window.append(contentsOf: chunk)
+            window.append(contentsOf: heard)
         }
         for s in chunk { let a = abs(s); if a > peak { peak = a } }
 
@@ -235,7 +238,7 @@ private final class Capture {
 
         sinceTick += n
         if sinceTick >= tickFrames {
-            sinceTick = 0
+            sinceTick %= tickFrames                  // the rest counts: `rate` holds on average
             events.level(value: Double(min(1, peak)))
             peak = 0
             if events.pitchObserved {

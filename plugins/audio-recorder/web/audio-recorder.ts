@@ -5,14 +5,15 @@
 //
 // What is heard: the analyser keeps the last `fftSize` samples, sized to hold more than a tick's
 // worth — so each tick reads everything since the one before: `level` is the loudest of those
-// samples, `pitch` the note in the newest window (pitch.ts), found only while the app listens.
+// samples, `pitch` the note in the newest window (pitch.ts, behind its band filter — an analyser
+// of its own), found only while the app listens.
 // `raw` turns the browser's voice processing off (echo cancellation, noise suppression, gain).
 //
 // The channel is the contract's (../contract.d.ts): audio-recorder.gen.ts is generated from it,
 // this file implements its AudioRecorderPlugin.
 
 import { AudioRecorderError, registerAudioRecorder, type AudioRecorderPlugin, type PluginHost, type RecordOptions, type Recording } from "./audio-recorder.gen"
-import { createPitchDetector } from "./pitch"
+import { FILTER_HIGH_HZ, FILTER_LOW_HZ, createPitchDetector } from "./pitch"
 
 /** The containers in the order we would rather have them; the first the browser encodes wins. */
 const PREFERRED = ["audio/mp4", "audio/webm;codecs=opus", "audio/webm", "audio/ogg;codecs=opus"]
@@ -60,8 +61,21 @@ export const register = (host: PluginHost): void => {
         const need = Math.max(detector.size, Math.ceil(audio.sampleRate / rate * 1.5))
         const analyser = audio.createAnalyser()
         analyser.fftSize = Math.min(32768, 2 ** Math.ceil(Math.log2(need)))
-        audio.createMediaStreamSource(stream).connect(analyser)
+        const source = audio.createMediaStreamSource(stream)
+        source.connect(analyser)
+        // The note is looked for in a band (pitch.ts): its own analyser behind two filters.
+        const band = (type: BiquadFilterType, hz: number): BiquadFilterNode => {
+          const node = audio.createBiquadFilter()
+          node.type = type
+          node.frequency.value = hz
+          node.Q.value = Math.SQRT1_2
+          return node
+        }
+        const heard = audio.createAnalyser()
+        heard.fftSize = analyser.fftSize
+        source.connect(band("highpass", FILTER_LOW_HZ)).connect(band("lowpass", FILTER_HIGH_HZ)).connect(heard)
         const samples = new Float32Array(analyser.fftSize)
+        const filtered = new Float32Array(heard.fftSize)
         let heardUntil = audio.currentTime
         meter = setInterval(() => {
           const now = audio.currentTime
@@ -73,7 +87,10 @@ export const register = (host: PluginHost): void => {
           let peak = 0
           for (let i = samples.length - fresh; i < samples.length; i++) { const a = Math.abs(samples[i]!); if (a > peak) peak = a }
           events.level({ value: Math.min(1, peak) })
-          if (pitchObserved) events.pitch(detector.detect(samples, samples.length - detector.size))
+          if (pitchObserved) {
+            heard.getFloatTimeDomainData(filtered)
+            events.pitch(detector.detect(filtered, filtered.length - detector.size))
+          }
         }, 1000 / rate)
       } catch { /* no AudioContext: no events, the recording still runs */ }
     }

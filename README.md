@@ -176,7 +176,7 @@ export interface CameraView extends View<"camera", CameraParams, CameraEvents> {
 | `qr-scanner` | view | `qrScanner` | yes, where the browser has `BarcodeDetector` |
 | `map` | view | `map` | yes |
 | `geolocation` | service | `geolocation` | yes |
-| `audio-recorder` | service | `audioRecorder` | yes: the browser's MediaRecorder (webm/opus, mp4 in Safari) |
+| `audio-recorder` | service | `audioRecorder` | yes: the browser's microphone — MediaRecorder for the file (webm/opus, mp4 in Safari), an AnalyserNode for the volume and the note |
 | `speech` | service | `speech` | yes, where the browser has `SpeechRecognition` (Chrome, Safari) |
 | `push` | service | `push` | no |
 | `apple-sign-in` | service | `appleSignIn` | no: iOS only, the system's sheet |

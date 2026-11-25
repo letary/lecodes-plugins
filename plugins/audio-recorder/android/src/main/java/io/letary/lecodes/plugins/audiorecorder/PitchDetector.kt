@@ -8,9 +8,59 @@
 
 package io.letary.lecodes.plugins.audiorecorder
 
+import kotlin.math.PI
 import kotlin.math.abs
 import kotlin.math.ceil
+import kotlin.math.cos
 import kotlin.math.max
+import kotlin.math.sin
+import kotlin.math.sqrt
+
+/**
+ * The band the detector listens through: 55 Hz – 2 kHz, two Butterworth biquads over the STREAM of
+ * samples (it keeps its state: every sample goes through, in order). Why: web/pitch.ts, "the filter".
+ */
+internal class PitchFilter(sampleRate: Int) {
+    private val high = Biquad(sampleRate, LOW_HZ, highPass = true)
+    private val low = Biquad(sampleRate, HIGH_HZ, highPass = false)
+
+    fun step(x: Float): Float = low.step(high.step(x.toDouble())).toFloat()
+
+    /** An RBJ biquad, Q = 1/√2, direct form I. */
+    private class Biquad(sampleRate: Int, hz: Double, highPass: Boolean) {
+        private val b0: Double
+        private val b1: Double
+        private val a1: Double
+        private val a2: Double
+        private var x1 = 0.0
+        private var x2 = 0.0
+        private var y1 = 0.0
+        private var y2 = 0.0
+
+        init {
+            val w = 2 * PI * hz / sampleRate
+            val c = cos(w)
+            val alpha = sin(w) / (2 * sqrt(0.5))
+            val a0 = 1 + alpha
+            b0 = (if (highPass) (1 + c) / 2 else (1 - c) / 2) / a0
+            b1 = (if (highPass) -(1 + c) else 1 - c) / a0
+            a1 = -2 * c / a0
+            a2 = (1 - alpha) / a0
+        }
+
+        fun step(x: Double): Double {
+            val y = b0 * x + b1 * x1 + b0 * x2 - a1 * y1 - a2 * y2
+            x2 = x1; x1 = x
+            y2 = y1; y1 = y
+            return y
+        }
+    }
+
+    private companion object {
+        const val LOW_HZ = 55.0
+        const val HIGH_HZ = 2000.0
+    }
+}
 
 internal class PitchDetector(private val sampleRate: Int) {
 
@@ -83,6 +133,6 @@ internal class PitchDetector(private val sampleRate: Int) {
         const val HIGHEST_HZ = 1500
         const val WINDOW_SECONDS = 0.0464
         const val THRESHOLD = 0.15f
-        const val SILENCE = 0.01f
+        const val SILENCE = 0.001f
     }
 }

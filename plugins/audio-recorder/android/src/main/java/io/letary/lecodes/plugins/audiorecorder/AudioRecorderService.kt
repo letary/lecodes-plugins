@@ -187,7 +187,8 @@ class AudioRecorderService(
         /** The capture's thread: read, keep (encode, hear), say. Ends by `running`, the limit or a failure. */
         private fun run() {
             val detector = PitchDetector(sampleRate)
-            val window = FloatArray(detector.size)           // the newest samples, the last one at the end
+            val filter = PitchFilter(sampleRate)
+            val window = FloatArray(detector.size)           // the newest samples as the detector hears them (filtered), the last one at the end
             val chunk = ShortArray(min(512, detector.size))
             var peak = 0
             var sinceTick = 0
@@ -206,14 +207,14 @@ class AudioRecorderService(
                         val s = chunk[i].toInt()
                         val a = abs(s)
                         if (a > peak) peak = a
-                        window[base + i] = s / 32768f
+                        window[base + i] = filter.step(s / 32768f)
                     }
                     encoder?.feed(chunk, n)
                     frames += n
 
                     sinceTick += n
                     if (sinceTick >= tickFrames) {
-                        sinceTick = 0
+                        sinceTick %= tickFrames              // the rest counts: `rate` holds on average
                         events.level(value = (peak / 32767.0).coerceIn(0.0, 1.0))
                         peak = 0
                         if (events.pitchObserved) {
