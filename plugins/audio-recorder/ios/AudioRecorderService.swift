@@ -5,7 +5,8 @@
 //  would hand them over a tenth of a second at a time), taken to a queue of the recording, which
 //    - writes them into a temporary .m4a (AVAudioFile, AAC) — not with `file: false`;
 //    - says what it hears, `rate` times a second: `level` (the loudest sample since the tick
-//      before) and, while the app listens, `pitch` (PitchDetector over the newest window).
+//      before) and, while the app listens, `pitch` (PitchDetector over the newest window, on a
+//      queue of its own: a tick that finds it busy sends no `pitch`).
 //  A pause drops the samples: nothing is written, nothing is said, the duration (the samples that
 //  were kept) does not grow. The recording ends by the app, by its own limit (`maxDuration`) or by
 //  an interruption of the audio session (a phone call); the file is kept until `stop()` hands it
@@ -155,6 +156,12 @@ private final class Capture {
     private var frames: Int64 = 0
     private var peak: Float = 0
     private var sinceTick = 0
+    /// A window is at the detector: the ticks until it answers look for no note. The detector is
+    /// the one costly step, so it has a queue of its own and never more than one window: when it
+    /// is slower than the ticks (an unoptimized build runs it ~100 times slower) `pitch` comes
+    /// less often, and the samples' queue — which stop() waits for — never falls behind.
+    private var detecting = false
+    private let analysis = DispatchQueue(label: "lecodes.audio-recorder.pitch")
 
     init(_ options: RecordOptions?, _ url: URL?, _ events: AudioRecorderEvents) throws {
         self.url = url
@@ -241,9 +248,17 @@ private final class Capture {
             sinceTick %= tickFrames                  // the rest counts: `rate` holds on average
             events.level(value: Double(min(1, peak)))
             peak = 0
-            if events.pitchObserved {
-                let (frequency, clarity) = detector.detect(window)
-                events.pitch(frequency: frequency, clarity: clarity)
+            if events.pitchObserved && !detecting {
+                detecting = true
+                let newest = window
+                analysis.async { [weak self] in
+                    guard let self else { return }
+                    let (frequency, clarity) = self.detector.detect(newest)
+                    self.queue.async {
+                        self.detecting = false
+                        if !self.closed && !self.paused { self.events.pitch(frequency: frequency, clarity: clarity) }
+                    }
+                }
             }
         }
         if maxFrames > 0 && frames >= maxFrames { ended(.maxDuration) }
