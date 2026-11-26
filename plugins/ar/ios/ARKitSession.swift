@@ -33,7 +33,6 @@
 
 import ARKit
 import CoreImage
-import CoreLocation
 import Foundation
 import LeCodes
 import UIKit
@@ -45,6 +44,7 @@ final class ARKitSession: NSObject, ARPlugin, ARSessionDelegate {
     private let camera: Entity?
     private let events: AREvents
     private let gl: GL
+    private let permissions: Permissions
 
     private var session: ARSession?
     /// What the session runs: `setImages` runs it again with another image set.
@@ -85,11 +85,12 @@ final class ARKitSession: NSObject, ARPlugin, ARSessionDelegate {
     private static let far: Float = 1000
     private static let jpeg = CIContext()
 
-    init(_ params: ARParams, _ events: AREvents, _ gl: GL) {
+    init(_ params: ARParams, _ events: AREvents, _ gl: GL, _ permissions: Permissions) {
         self.scene = params.scene
         self.camera = params.camera
         self.events = events
         self.gl = gl
+        self.permissions = permissions
         super.init()
     }
 
@@ -124,7 +125,7 @@ final class ARKitSession: NSObject, ARPlugin, ARSessionDelegate {
             c.automaticImageScaleEstimationEnabled = true
             c.environmentTexturing = .none
             c.isAutoFocusEnabled = options?.autoFocus ?? true
-            c.worldAlignment = Self.alignment(options?.worldAlignment ?? .gravity)
+            c.worldAlignment = alignment(options?.worldAlignment ?? .gravity)
             configuration = c
         }
         configuration.isLightEstimationEnabled = options?.lightEstimation ?? false
@@ -513,15 +514,17 @@ final class ARKitSession: NSObject, ARPlugin, ARSessionDelegate {
     }
 
     /// Heading alignment needs the compass, which ARKit reads only with location access: without
-    /// it, gravity alone (and a line saying so).
-    private static func alignment(_ alignment: WorldAlignment) -> ARConfiguration.WorldAlignment {
+    /// it, gravity alone (and a line saying so). The state is the host's (`permissions`), never
+    /// CLLocationManager here: Apple demands the location purpose string of every binary that holds
+    /// that class, so the location belongs to the `geolocation` plugin — the app lists it and asks
+    /// (`permissions.request('location')`) before the start; without it the kind has no asker.
+    private func alignment(_ alignment: WorldAlignment) -> ARConfiguration.WorldAlignment {
         guard alignment == .gravityAndHeading else { return .gravity }
-        switch CLLocationManager().authorizationStatus {
-        case .authorizedWhenInUse, .authorizedAlways: return .gravityAndHeading
-        default:
-            print("[ar] worldAlignment \"gravityAndHeading\" needs location access — aligned by gravity only")
+        guard permissions.query(.location) == .granted else {
+            print("[ar] worldAlignment \"gravityAndHeading\" needs location access (the geolocation plugin, granted) — aligned by gravity only")
             return .gravity
         }
+        return .gravityAndHeading
     }
 
     /// The viewport's turn (degrees, the display from its natural portrait) as the interface

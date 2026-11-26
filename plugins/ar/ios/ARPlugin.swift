@@ -18,6 +18,7 @@ public enum LeCodesARPlugin {
 
     public static func register(in engine: LeCodesEngine) {
         let gl = engine.gl
-        ARChannel.register(in: engine) { params, events in ARKitSession(params, events, gl) }
+        let permissions = engine.permissions
+        ARChannel.register(in: engine) { params, events in ARKitSession(params, events, gl, permissions) }
     }
 }
