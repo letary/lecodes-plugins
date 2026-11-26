@@ -67,6 +67,7 @@ export interface TrackInfo {
   kind: MediaKind
   /** The device's name for a local track; "" for a received one. */
   label: string
+  /** Always true for a received track. */
   enabled: boolean
   /** A received track whose sender is not sending (its camera is off, its microphone muted).
    *  Default false. */
@@ -93,34 +94,36 @@ export interface TrackSettings {
 export interface RtcMediaParams {}
 
 export interface RtcMediaEvents {
-  /** A device was plugged in or removed (a headset, a camera). */
+  /** The set of microphones and cameras changed (a headset with a microphone, a camera). */
   deviceChange: void
-  /** A local track ended on its own: the OS took the device and did not give it back. */
+  /** A local track ended on its own: the OS took the device and did not give it back. Its id is
+   *  forgotten: every later call that names it answers as for an unknown id. */
   trackEnded: { trackId: string }
 }
 
 /** The devices: capture, the device list, the audio route. One session for the app. */
 export interface RtcMedia extends Service<"rtcMedia", RtcMediaParams, RtcMediaEvents> {
   /** Capture: prompts for the permissions it needs, resolves with the new tracks — the microphone
-   *  first when both were asked for. @rejects denied notFound failed */
+   *  first when both were asked for. Neither kind asked for is `failed`.
+   *  @rejects denied notFound failed */
   getUserMedia(constraints: MediaConstraints): Promise<TrackInfo[]>
   /** The devices the host can capture with (labels need a granted permission on the web). */
   enumerateDevices(): Promise<DeviceInfo[]>
   /** A disabled track is not sent: the other side learns it (`remoteMedia`, inactive) and shows
-   *  what it likes instead. The device stays open; the track stays in every connection.
-   *  @rejects notFound */
+   *  what it likes instead. The device stays open; the track stays in every connection. Only a
+   *  local track: a received track's id is `notFound`. @rejects notFound */
   setTrackEnabled(trackId: string, enabled: boolean): Promise<void>
   /** Re-aim a local video track: the other camera, another size or rate. The track and its id
    *  stay; every connection keeps sending it. @rejects notFound failed */
   applyConstraints(trackId: string, constraints: VideoConstraints): Promise<void>
-  /** @rejects notFound */
+  /** Empty for a track that is not a local camera. @rejects notFound */
   getTrackSettings(trackId: string): Promise<TrackSettings>
   /** The most a local video track may take, bits per second (default 1 500 000). It is encoded
    *  once for every connection that sends it, so the ceiling is the track's; the size and the rate
    *  under it follow the network by themselves. @rejects notFound */
   setMaxVideoBitrate(trackId: string, bitrate: i32): Promise<void>
   /** End a track: the device is released, every connection stops sending it, the id is
-   *  forgotten. A no-op for an unknown id. */
+   *  forgotten. A no-op for an unknown id and for a received track's (its connection owns it). */
   stopTrack(trackId: string): Promise<void>
   /** Route the audio of the call: the earpiece (or a headset when one is connected) or the
    *  loudspeaker. A no-op on the web. */
@@ -150,6 +153,7 @@ export interface DataChannelInit {
   ordered?: boolean
   /** At most one of the two; neither = reliable. */
   maxRetransmits?: i32
+  /** Milliseconds. */
   maxPacketLifeTime?: i32
 }
 
@@ -186,6 +190,8 @@ export interface RtcConnectionEvents {
   /** `text` for a string, `binary` for bytes — exactly one of the two. */
   dataChannelMessage: { id: i32, text?: string, binary?: Uint8Array }
   dataChannelBufferedAmountLow: { id: i32 }
+  /** A channel closed — by the other side, or by `closeDataChannel` here (both sides get it). Its
+   *  id is forgotten. */
   dataChannelClose: { id: i32 }
 }
 
@@ -198,7 +204,8 @@ export interface RtcConnection extends Service<"rtcConnection", RtcConnectionPar
   acceptOffer(offer: string): Promise<string>
   /** The offering side: takes the answer. @rejects failed closed */
   acceptAnswer(answer: string): Promise<void>
-  /** A candidate of the other side (its `candidate:` line), or a relay's. */
+  /** A candidate of the other side (its `candidate:` line), or a relay's; "" = it has no more.
+   *  A line that cannot be read (a name instead of an address) is skipped, not an error. */
   addIceCandidate(candidate: string): Promise<void>
 
   // -- media. Both kinds are in every connection from the start: sending or stopping is never a
@@ -207,17 +214,18 @@ export interface RtcConnection extends Service<"rtcConnection", RtcConnectionPar
    *  @rejects notFound failed closed */
   setTrack(kind: MediaKind, trackId: string | null): Promise<void>
   /** The two tracks this connection receives; they exist from the start (`muted` until the other
-   *  side sends). The video one goes to rtcVideo's setTrack; the audio one plays by itself. */
+   *  side sends). The video one goes to rtcVideo's setTrack; the audio one plays by itself.
+   *  @rejects failed closed */
   getRemoteTracks(): Promise<{ audio: TrackInfo, video: TrackInfo }>
-  /** Leave this peer's sound out of what is played. */
+  /** Leave this peer's sound out of what is played. @rejects failed closed */
   setRemoteAudioMuted(muted: boolean): Promise<void>
-  /** @rejects closed */
+  /** Zeros, state "new", before the first description. @rejects failed closed */
   getStats(): Promise<ConnectionStats>
 
   // -- data channels: opened in-band, no new offer
   /** Resolves with the channel's id; `dataChannelOpen` says when it can send. @rejects failed closed */
   createDataChannel(label: string, options?: DataChannelInit): Promise<i32>
-  /** @rejects notFound failed closed */
+  /** A message of at most 64 KB. @rejects notFound failed closed */
   sendText(channelId: i32, text: string): Promise<void>
   /** @rejects notFound failed closed */
   sendBinary(channelId: i32, data: Uint8Array): Promise<void>
@@ -225,7 +233,7 @@ export interface RtcConnection extends Service<"rtcConnection", RtcConnectionPar
   getBufferedAmount(channelId: i32): Promise<f64>
   /** @rejects notFound */
   setBufferedAmountLowThreshold(channelId: i32, threshold: f64): Promise<void>
-  /** A no-op for an unknown id. */
+  /** `dataChannelClose` follows. A no-op for an unknown id. */
   closeDataChannel(channelId: i32): Promise<void>
 }
 

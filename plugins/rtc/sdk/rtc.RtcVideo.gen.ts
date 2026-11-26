@@ -44,19 +44,3 @@ export class RtcVideoBase extends ViewChannel<RtcVideoEvents> {
   setObjectFit(fit: ObjectFit): Promise<void> { return setObjectFit(this, fit) }
   setMirror(mirror: boolean): Promise<void> { return setMirror(this, mirror) }
 }
-
-export type RtcVideo = RtcVideoBase
-
-// PURE IIFE: an app that never names RtcVideo carries none of this file.
-export const RtcVideo: {
-  (params?: RtcVideoParams): RtcVideo
-  /** Whether this host registered the view "rtcVideo". */
-  readonly supported: boolean
-  /** Whether the host's half has `method`: false on a host whose half is older than it. */
-  supports(method: Method): boolean
-} = /*#__PURE__*/ (() => {
-  const factory = (params?: RtcVideoParams): RtcVideo => new RtcVideoBase(params)
-  Object.defineProperty(factory, "supported", { get: (): boolean => supports() })
-  factory.supports = supports
-  return factory as any
-})()

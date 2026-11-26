@@ -245,6 +245,7 @@ export interface TrackInfo {
   kind: MediaKind
   /** The device's name for a local track; "" for a received one. */
   label: string
+  /** Always true for a received track. */
   enabled: boolean
   /** A received track whose sender is not sending (its camera is off, its microphone muted).
    *  Default false. */
@@ -349,6 +350,7 @@ export interface DataChannelInit {
   ordered?: boolean
   /** At most one of the two; neither = reliable. */
   maxRetransmits?: number
+  /** Milliseconds. */
   maxPacketLifeTime?: number
 }
 const readDataChannelInit = (v: unknown): DataChannelInit | undefined => {
@@ -432,9 +434,10 @@ export class RtcMediaError extends Error {
 
 /** The events of "rtcMedia": what the half sends the app. */
 export interface RtcMediaEvents {
-  /** A device was plugged in or removed (a headset, a camera). */
+  /** The set of microphones and cameras changed (a headset with a microphone, a camera). */
   deviceChange(): void
-  /** A local track ended on its own: the OS took the device and did not give it back. */
+  /** A local track ended on its own: the OS took the device and did not give it back. Its id is
+   *  forgotten: every later call that names it answers as for an unknown id. */
   trackEnded(payload: { trackId: string }): void
 }
 
@@ -443,20 +446,22 @@ export interface RtcMediaEvents {
  *  What the half implements. A call returns its result, or a promise of it; it rejects by throwing. */
 export interface RtcMediaPlugin {
   /** Capture: prompts for the permissions it needs, resolves with the new tracks — the microphone
-   *  first when both were asked for.
+   *  first when both were asked for. Neither kind asked for is `failed`.
    *  Rejects with "denied" / "notFound" / "failed". */
   getUserMedia(constraints: MediaConstraints): TrackInfo[] | Promise<TrackInfo[]>
   /** The devices the host can capture with (labels need a granted permission on the web). */
   enumerateDevices(): DeviceInfo[] | Promise<DeviceInfo[]>
   /** A disabled track is not sent: the other side learns it (`remoteMedia`, inactive) and shows
-   *  what it likes instead. The device stays open; the track stays in every connection.
+   *  what it likes instead. The device stays open; the track stays in every connection. Only a
+   *  local track: a received track's id is `notFound`.
    *  Rejects with "notFound". */
   setTrackEnabled(trackId: string, enabled: boolean): void | Promise<void>
   /** Re-aim a local video track: the other camera, another size or rate. The track and its id
    *  stay; every connection keeps sending it.
    *  Rejects with "notFound" / "failed". */
   applyConstraints(trackId: string, constraints: VideoConstraints): void | Promise<void>
-  /** Rejects with "notFound". */
+  /** Empty for a track that is not a local camera.
+   *  Rejects with "notFound". */
   getTrackSettings(trackId: string): TrackSettings | Promise<TrackSettings>
   /** The most a local video track may take, bits per second (default 1 500 000). It is encoded
    *  once for every connection that sends it, so the ceiling is the track's; the size and the rate
@@ -464,7 +469,7 @@ export interface RtcMediaPlugin {
    *  Rejects with "notFound". */
   setMaxVideoBitrate(trackId: string, bitrate: number): void | Promise<void>
   /** End a track: the device is released, every connection stops sending it, the id is
-   *  forgotten. A no-op for an unknown id. */
+   *  forgotten. A no-op for an unknown id and for a received track's (its connection owns it). */
   stopTrack(trackId: string): void | Promise<void>
   /** Route the audio of the call: the earpiece (or a headset when one is connected) or the
    *  loudspeaker. A no-op on the web. */
@@ -572,6 +577,8 @@ export interface RtcConnectionEvents {
   /** `text` for a string, `binary` for bytes — exactly one of the two. */
   dataChannelMessage(payload: { id: number, text?: string, binary?: Uint8Array }): void
   dataChannelBufferedAmountLow(payload: { id: number }): void
+  /** A channel closed — by the other side, or by `closeDataChannel` here (both sides get it). Its
+   *  id is forgotten. */
   dataChannelClose(payload: { id: number }): void
 }
 
@@ -588,22 +595,27 @@ export interface RtcConnectionPlugin {
   /** The offering side: takes the answer.
    *  Rejects with "failed" / "closed". */
   acceptAnswer(answer: string): void | Promise<void>
-  /** A candidate of the other side (its `candidate:` line), or a relay's. */
+  /** A candidate of the other side (its `candidate:` line), or a relay's; "" = it has no more.
+   *  A line that cannot be read (a name instead of an address) is skipped, not an error. */
   addIceCandidate(candidate: string): void | Promise<void>
   /** Send a local track of rtcMedia (the microphone, the camera); null = stop sending that kind.
    *  Rejects with "notFound" / "failed" / "closed". */
   setTrack(kind: MediaKind, trackId: string | null): void | Promise<void>
   /** The two tracks this connection receives; they exist from the start (`muted` until the other
-   *  side sends). The video one goes to rtcVideo's setTrack; the audio one plays by itself. */
+   *  side sends). The video one goes to rtcVideo's setTrack; the audio one plays by itself.
+   *  Rejects with "failed" / "closed". */
   getRemoteTracks(): RtcConnectionGetRemoteTracksResult | Promise<RtcConnectionGetRemoteTracksResult>
-  /** Leave this peer's sound out of what is played. */
+  /** Leave this peer's sound out of what is played.
+   *  Rejects with "failed" / "closed". */
   setRemoteAudioMuted(muted: boolean): void | Promise<void>
-  /** Rejects with "closed". */
+  /** Zeros, state "new", before the first description.
+   *  Rejects with "failed" / "closed". */
   getStats(): ConnectionStats | Promise<ConnectionStats>
   /** Resolves with the channel's id; `dataChannelOpen` says when it can send.
    *  Rejects with "failed" / "closed". */
   createDataChannel(label: string, options?: DataChannelInit): number | Promise<number>
-  /** Rejects with "notFound" / "failed" / "closed". */
+  /** A message of at most 64 KB.
+   *  Rejects with "notFound" / "failed" / "closed". */
   sendText(channelId: number, text: string): void | Promise<void>
   /** Rejects with "notFound" / "failed" / "closed". */
   sendBinary(channelId: number, data: Uint8Array): void | Promise<void>
@@ -612,7 +624,7 @@ export interface RtcConnectionPlugin {
   getBufferedAmount(channelId: number): number | Promise<number>
   /** Rejects with "notFound". */
   setBufferedAmountLowThreshold(channelId: number, threshold: number): void | Promise<void>
-  /** A no-op for an unknown id. */
+  /** `dataChannelClose` follows. A no-op for an unknown id. */
   closeDataChannel(channelId: number): void | Promise<void>
   /** The session closed (the app's close, the world's teardown): stop what it started. */
   close?(): void

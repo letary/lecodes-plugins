@@ -172,6 +172,7 @@ public struct TrackInfo {
     public var kind: MediaKind
     /// The device's name for a local track; "" for a received one.
     public var label: String
+    /// Always true for a received track.
     public var enabled: Bool
     /// A received track whose sender is not sending (its camera is off, its microphone muted).
     /// Default false.
@@ -396,6 +397,7 @@ public struct DataChannelInit {
     public var ordered: Bool?
     /// At most one of the two; neither = reliable.
     public var maxRetransmits: Int32?
+    /// Milliseconds.
     public var maxPacketLifeTime: Int32?
 
     public init(ordered: Bool? = nil, maxRetransmits: Int32? = nil, maxPacketLifeTime: Int32? = nil) {
@@ -493,10 +495,11 @@ public enum RtcMediaCode: String, PluginCode {
 public struct RtcMediaEvents {
     let channel: ServiceChannel
 
-    /// A device was plugged in or removed (a headset, a camera).
+    /// The set of microphones and cameras changed (a headset with a microphone, a camera).
     public func deviceChange() { channel.emit("deviceChange") }
 
-    /// A local track ended on its own: the OS took the device and did not give it back.
+    /// A local track ended on its own: the OS took the device and did not give it back. Its id is
+    /// forgotten: every later call that names it answers as for an unknown id.
     public func trackEnded(trackId: String) {
         self.channel.emit("trackEnded") { w in
             w.beginObject(1)
@@ -511,19 +514,21 @@ public struct RtcMediaEvents {
 /// once, now or later, from any thread.
 public protocol RtcMediaPlugin: AnyObject {
     /// Capture: prompts for the permissions it needs, resolves with the new tracks — the microphone
-    /// first when both were asked for.
+    /// first when both were asked for. Neither kind asked for is `failed`.
     /// Rejects with .denied / .notFound / .failed.
     func getUserMedia(_ constraints: MediaConstraints, _ reply: Reply<[TrackInfo], RtcMediaCode>)
     /// The devices the host can capture with (labels need a granted permission on the web).
     func enumerateDevices(_ reply: Reply<[DeviceInfo], RtcMediaCode>)
     /// A disabled track is not sent: the other side learns it (`remoteMedia`, inactive) and shows
-    /// what it likes instead. The device stays open; the track stays in every connection.
+    /// what it likes instead. The device stays open; the track stays in every connection. Only a
+    /// local track: a received track's id is `notFound`.
     /// Rejects with .notFound.
     func setTrackEnabled(_ trackId: String, _ enabled: Bool, _ reply: Reply<Void, RtcMediaCode>)
     /// Re-aim a local video track: the other camera, another size or rate. The track and its id
     /// stay; every connection keeps sending it.
     /// Rejects with .notFound / .failed.
     func applyConstraints(_ trackId: String, _ constraints: VideoConstraints, _ reply: Reply<Void, RtcMediaCode>)
+    /// Empty for a track that is not a local camera.
     /// Rejects with .notFound.
     func getTrackSettings(_ trackId: String, _ reply: Reply<TrackSettings, RtcMediaCode>)
     /// The most a local video track may take, bits per second (default 1 500 000). It is encoded
@@ -532,7 +537,7 @@ public protocol RtcMediaPlugin: AnyObject {
     /// Rejects with .notFound.
     func setMaxVideoBitrate(_ trackId: String, _ bitrate: Int32, _ reply: Reply<Void, RtcMediaCode>)
     /// End a track: the device is released, every connection stops sending it, the id is
-    /// forgotten. A no-op for an unknown id.
+    /// forgotten. A no-op for an unknown id and for a received track's (its connection owns it).
     func stopTrack(_ trackId: String, _ reply: Reply<Void, RtcMediaCode>)
     /// Route the audio of the call: the earpiece (or a headset when one is connected) or the
     /// loudspeaker. A no-op on the web.
@@ -683,6 +688,8 @@ public struct RtcConnectionEvents {
         }
     }
 
+    /// A channel closed — by the other side, or by `closeDataChannel` here (both sides get it). Its
+    /// id is forgotten.
     public func dataChannelClose(id: Int32) {
         self.channel.emit("dataChannelClose") { w in
             w.beginObject(1)
@@ -705,21 +712,26 @@ public protocol RtcConnectionPlugin: AnyObject {
     /// The offering side: takes the answer.
     /// Rejects with .failed / .closed.
     func acceptAnswer(_ answer: String, _ reply: Reply<Void, RtcConnectionCode>)
-    /// A candidate of the other side (its `candidate:` line), or a relay's.
+    /// A candidate of the other side (its `candidate:` line), or a relay's; "" = it has no more.
+    /// A line that cannot be read (a name instead of an address) is skipped, not an error.
     func addIceCandidate(_ candidate: String, _ reply: Reply<Void, RtcConnectionCode>)
     /// Send a local track of rtcMedia (the microphone, the camera); null = stop sending that kind.
     /// Rejects with .notFound / .failed / .closed.
     func setTrack(_ kind: MediaKind, _ trackId: String?, _ reply: Reply<Void, RtcConnectionCode>)
     /// The two tracks this connection receives; they exist from the start (`muted` until the other
     /// side sends). The video one goes to rtcVideo's setTrack; the audio one plays by itself.
+    /// Rejects with .failed / .closed.
     func getRemoteTracks(_ reply: Reply<RtcConnectionGetRemoteTracksResult, RtcConnectionCode>)
     /// Leave this peer's sound out of what is played.
+    /// Rejects with .failed / .closed.
     func setRemoteAudioMuted(_ muted: Bool, _ reply: Reply<Void, RtcConnectionCode>)
-    /// Rejects with .closed.
+    /// Zeros, state "new", before the first description.
+    /// Rejects with .failed / .closed.
     func getStats(_ reply: Reply<ConnectionStats, RtcConnectionCode>)
     /// Resolves with the channel's id; `dataChannelOpen` says when it can send.
     /// Rejects with .failed / .closed.
     func createDataChannel(_ label: String, _ options: DataChannelInit?, _ reply: Reply<Int32, RtcConnectionCode>)
+    /// A message of at most 64 KB.
     /// Rejects with .notFound / .failed / .closed.
     func sendText(_ channelId: Int32, _ text: String, _ reply: Reply<Void, RtcConnectionCode>)
     /// Rejects with .notFound / .failed / .closed.
@@ -729,7 +741,7 @@ public protocol RtcConnectionPlugin: AnyObject {
     func getBufferedAmount(_ channelId: Int32, _ reply: Reply<Double, RtcConnectionCode>)
     /// Rejects with .notFound.
     func setBufferedAmountLowThreshold(_ channelId: Int32, _ threshold: Double, _ reply: Reply<Void, RtcConnectionCode>)
-    /// A no-op for an unknown id.
+    /// `dataChannelClose` follows. A no-op for an unknown id.
     func closeDataChannel(_ channelId: Int32, _ reply: Reply<Void, RtcConnectionCode>)
 
     /// The session closed (the app's close, the world's teardown): stop what it started.

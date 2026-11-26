@@ -12,7 +12,7 @@ export const VERSION = 1
 // ---- the wire, call by call ----------------------------------------------------------------------
 
 /** Capture: prompts for the permissions it needs, resolves with the new tracks — the microphone
- *  first when both were asked for.
+ *  first when both were asked for. Neither kind asked for is `failed`.
  *  Rejects with "denied" / "notFound" / "failed". */
 export const getUserMedia = (service: ServiceChannel<RtcMediaEvents>, constraints: MediaConstraints): Promise<TrackInfo[]> =>
   service._call("getUserMedia", [constraints])
@@ -22,7 +22,8 @@ export const enumerateDevices = (service: ServiceChannel<RtcMediaEvents>): Promi
   service._call("enumerateDevices", [])
 
 /** A disabled track is not sent: the other side learns it (`remoteMedia`, inactive) and shows
- *  what it likes instead. The device stays open; the track stays in every connection.
+ *  what it likes instead. The device stays open; the track stays in every connection. Only a
+ *  local track: a received track's id is `notFound`.
  *  Rejects with "notFound". */
 export const setTrackEnabled = (service: ServiceChannel<RtcMediaEvents>, trackId: string, enabled: boolean): Promise<void> =>
   service._call("setTrackEnabled", [trackId, enabled])
@@ -33,7 +34,8 @@ export const setTrackEnabled = (service: ServiceChannel<RtcMediaEvents>, trackId
 export const applyConstraints = (service: ServiceChannel<RtcMediaEvents>, trackId: string, constraints: VideoConstraints): Promise<void> =>
   service._call("applyConstraints", [trackId, constraints])
 
-/** Rejects with "notFound". */
+/** Empty for a track that is not a local camera.
+ *  Rejects with "notFound". */
 export const getTrackSettings = (service: ServiceChannel<RtcMediaEvents>, trackId: string): Promise<TrackSettings> =>
   service._call("getTrackSettings", [trackId])
 
@@ -45,7 +47,7 @@ export const setMaxVideoBitrate = (service: ServiceChannel<RtcMediaEvents>, trac
   service._call("setMaxVideoBitrate", [trackId, bitrate])
 
 /** End a track: the device is released, every connection stops sending it, the id is
- *  forgotten. A no-op for an unknown id. */
+ *  forgotten. A no-op for an unknown id and for a received track's (its connection owns it). */
 export const stopTrack = (service: ServiceChannel<RtcMediaEvents>, trackId: string): Promise<void> =>
   service._call("stopTrack", [trackId])
 
@@ -71,20 +73,22 @@ export class RtcMediaBase extends ServiceChannel<RtcMediaEvents> {
   constructor(params: RtcMediaParams = {}) { super("RtcMedia", NAME, params) }
 
   /** Capture: prompts for the permissions it needs, resolves with the new tracks — the microphone
-   *  first when both were asked for.
+   *  first when both were asked for. Neither kind asked for is `failed`.
    *  Rejects with "denied" / "notFound" / "failed". */
   getUserMedia(constraints: MediaConstraints): Promise<TrackInfo[]> { return getUserMedia(this, constraints) }
   /** The devices the host can capture with (labels need a granted permission on the web). */
   enumerateDevices(): Promise<DeviceInfo[]> { return enumerateDevices(this) }
   /** A disabled track is not sent: the other side learns it (`remoteMedia`, inactive) and shows
-   *  what it likes instead. The device stays open; the track stays in every connection.
+   *  what it likes instead. The device stays open; the track stays in every connection. Only a
+   *  local track: a received track's id is `notFound`.
    *  Rejects with "notFound". */
   setTrackEnabled(trackId: string, enabled: boolean): Promise<void> { return setTrackEnabled(this, trackId, enabled) }
   /** Re-aim a local video track: the other camera, another size or rate. The track and its id
    *  stay; every connection keeps sending it.
    *  Rejects with "notFound" / "failed". */
   applyConstraints(trackId: string, constraints: VideoConstraints): Promise<void> { return applyConstraints(this, trackId, constraints) }
-  /** Rejects with "notFound". */
+  /** Empty for a track that is not a local camera.
+   *  Rejects with "notFound". */
   getTrackSettings(trackId: string): Promise<TrackSettings> { return getTrackSettings(this, trackId) }
   /** The most a local video track may take, bits per second (default 1 500 000). It is encoded
    *  once for every connection that sends it, so the ceiling is the track's; the size and the rate
@@ -92,25 +96,9 @@ export class RtcMediaBase extends ServiceChannel<RtcMediaEvents> {
    *  Rejects with "notFound". */
   setMaxVideoBitrate(trackId: string, bitrate: number): Promise<void> { return setMaxVideoBitrate(this, trackId, bitrate) }
   /** End a track: the device is released, every connection stops sending it, the id is
-   *  forgotten. A no-op for an unknown id. */
+   *  forgotten. A no-op for an unknown id and for a received track's (its connection owns it). */
   stopTrack(trackId: string): Promise<void> { return stopTrack(this, trackId) }
   /** Route the audio of the call: the earpiece (or a headset when one is connected) or the
    *  loudspeaker. A no-op on the web. */
   setAudioOutput(output: AudioOutput): Promise<void> { return setAudioOutput(this, output) }
 }
-
-export type RtcMedia = RtcMediaBase & {
-  /** Whether this host registered the service "rtcMedia". */
-  readonly supported: boolean
-  /** Whether the host's half has `method`: false on a host whose half is older than it. */
-  supports(method: Method): boolean
-}
-
-// PURE IIFE: an app that never names RtcMedia carries none of this file. One session for the app's
-// life, opened by the first call.
-export const RtcMedia: RtcMedia = /*#__PURE__*/ (() => {
-  const service = new RtcMediaBase()
-  Object.defineProperty(service, "supported", { get: (): boolean => supports() })
-  Object.defineProperty(service, "supports", { value: supports })
-  return service as any
-})()

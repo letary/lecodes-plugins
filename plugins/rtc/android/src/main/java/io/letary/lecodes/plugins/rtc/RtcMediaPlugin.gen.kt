@@ -145,6 +145,7 @@ data class TrackInfo(
     val kind: MediaKind,
     /** The device's name for a local track; "" for a received one. */
     val label: String,
+    /** Always true for a received track. */
     val enabled: Boolean,
     /**
      * A received track whose sender is not sending (its camera is off, its microphone muted).
@@ -327,6 +328,7 @@ data class DataChannelInit(
     val ordered: Boolean? = null,
     /** At most one of the two; neither = reliable. */
     val maxRetransmits: Int? = null,
+    /** Milliseconds. */
     val maxPacketLifeTime: Int? = null,
 ) {
     companion object {
@@ -397,10 +399,13 @@ enum class RtcMediaCode(override val code: String) : PluginCode {
 
 /** The events of "rtcMedia": what the plugin sends the app. Any thread. */
 class RtcMediaEvents(private val channel: PluginEmit) {
-    /** A device was plugged in or removed (a headset, a camera). */
+    /** The set of microphones and cameras changed (a headset with a microphone, a camera). */
     fun deviceChange() = channel.emit("deviceChange", null)
 
-    /** A local track ended on its own: the OS took the device and did not give it back. */
+    /**
+     * A local track ended on its own: the OS took the device and did not give it back. Its id is
+     * forgotten: every later call that names it answers as for an unknown id.
+     */
     fun trackEnded(trackId: String) {
         val w = PackedWriter()
         w.beginObject()
@@ -419,7 +424,7 @@ class RtcMediaEvents(private val channel: PluginEmit) {
 interface RtcMediaPlugin {
     /**
      * Capture: prompts for the permissions it needs, resolves with the new tracks — the microphone
-     * first when both were asked for.
+     * first when both were asked for. Neither kind asked for is `failed`.
      * Rejects with DENIED / NOT_FOUND / FAILED.
      */
     fun getUserMedia(constraints: MediaConstraints, reply: Reply<List<TrackInfo>, RtcMediaCode>)
@@ -429,7 +434,8 @@ interface RtcMediaPlugin {
 
     /**
      * A disabled track is not sent: the other side learns it (`remoteMedia`, inactive) and shows
-     * what it likes instead. The device stays open; the track stays in every connection.
+     * what it likes instead. The device stays open; the track stays in every connection. Only a
+     * local track: a received track's id is `notFound`.
      * Rejects with NOT_FOUND.
      */
     fun setTrackEnabled(trackId: String, enabled: Boolean, reply: Reply<Unit, RtcMediaCode>)
@@ -441,7 +447,10 @@ interface RtcMediaPlugin {
      */
     fun applyConstraints(trackId: String, constraints: VideoConstraints, reply: Reply<Unit, RtcMediaCode>)
 
-    /** Rejects with NOT_FOUND. */
+    /**
+     * Empty for a track that is not a local camera.
+     * Rejects with NOT_FOUND.
+     */
     fun getTrackSettings(trackId: String, reply: Reply<TrackSettings, RtcMediaCode>)
 
     /**
@@ -454,7 +463,7 @@ interface RtcMediaPlugin {
 
     /**
      * End a track: the device is released, every connection stops sending it, the id is
-     * forgotten. A no-op for an unknown id.
+     * forgotten. A no-op for an unknown id and for a received track's (its connection owns it).
      */
     fun stopTrack(trackId: String, reply: Reply<Unit, RtcMediaCode>)
 
@@ -607,6 +616,10 @@ class RtcConnectionEvents(private val channel: PluginEmit) {
         this.channel.emit("dataChannelBufferedAmountLow", w.bytes())
     }
 
+    /**
+     * A channel closed — by the other side, or by `closeDataChannel` here (both sides get it). Its
+     * id is forgotten.
+     */
     fun dataChannelClose(id: Int) {
         val w = PackedWriter()
         w.beginObject()
@@ -641,7 +654,10 @@ interface RtcConnectionPlugin {
      */
     fun acceptAnswer(answer: String, reply: Reply<Unit, RtcConnectionCode>)
 
-    /** A candidate of the other side (its `candidate:` line), or a relay's. */
+    /**
+     * A candidate of the other side (its `candidate:` line), or a relay's; "" = it has no more.
+     * A line that cannot be read (a name instead of an address) is skipped, not an error.
+     */
     fun addIceCandidate(candidate: String, reply: Reply<Unit, RtcConnectionCode>)
 
     /**
@@ -653,13 +669,20 @@ interface RtcConnectionPlugin {
     /**
      * The two tracks this connection receives; they exist from the start (`muted` until the other
      * side sends). The video one goes to rtcVideo's setTrack; the audio one plays by itself.
+     * Rejects with FAILED / CLOSED.
      */
     fun getRemoteTracks(reply: Reply<RtcConnectionGetRemoteTracksResult, RtcConnectionCode>)
 
-    /** Leave this peer's sound out of what is played. */
+    /**
+     * Leave this peer's sound out of what is played.
+     * Rejects with FAILED / CLOSED.
+     */
     fun setRemoteAudioMuted(muted: Boolean, reply: Reply<Unit, RtcConnectionCode>)
 
-    /** Rejects with CLOSED. */
+    /**
+     * Zeros, state "new", before the first description.
+     * Rejects with FAILED / CLOSED.
+     */
     fun getStats(reply: Reply<ConnectionStats, RtcConnectionCode>)
 
     /**
@@ -668,7 +691,10 @@ interface RtcConnectionPlugin {
      */
     fun createDataChannel(label: String, options: DataChannelInit?, reply: Reply<Int, RtcConnectionCode>)
 
-    /** Rejects with NOT_FOUND / FAILED / CLOSED. */
+    /**
+     * A message of at most 64 KB.
+     * Rejects with NOT_FOUND / FAILED / CLOSED.
+     */
     fun sendText(channelId: Int, text: String, reply: Reply<Unit, RtcConnectionCode>)
 
     /** Rejects with NOT_FOUND / FAILED / CLOSED. */
@@ -683,7 +709,7 @@ interface RtcConnectionPlugin {
     /** Rejects with NOT_FOUND. */
     fun setBufferedAmountLowThreshold(channelId: Int, threshold: Double, reply: Reply<Unit, RtcConnectionCode>)
 
-    /** A no-op for an unknown id. */
+    /** `dataChannelClose` follows. A no-op for an unknown id. */
     fun closeDataChannel(channelId: Int, reply: Reply<Unit, RtcConnectionCode>)
 
     /** The session closed (the app's close, the world's teardown): stop what it started. */

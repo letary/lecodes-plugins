@@ -26,7 +26,8 @@ export const acceptOffer = (service: ServiceChannel<RtcConnectionEvents>, offer:
 export const acceptAnswer = (service: ServiceChannel<RtcConnectionEvents>, answer: string): Promise<void> =>
   service._call("acceptAnswer", [answer])
 
-/** A candidate of the other side (its `candidate:` line), or a relay's. */
+/** A candidate of the other side (its `candidate:` line), or a relay's; "" = it has no more.
+ *  A line that cannot be read (a name instead of an address) is skipped, not an error. */
 export const addIceCandidate = (service: ServiceChannel<RtcConnectionEvents>, candidate: string): Promise<void> =>
   service._call("addIceCandidate", [candidate])
 
@@ -36,15 +37,18 @@ export const setTrack = (service: ServiceChannel<RtcConnectionEvents>, kind: Med
   service._call("setTrack", [kind, trackId])
 
 /** The two tracks this connection receives; they exist from the start (`muted` until the other
- *  side sends). The video one goes to rtcVideo's setTrack; the audio one plays by itself. */
+ *  side sends). The video one goes to rtcVideo's setTrack; the audio one plays by itself.
+ *  Rejects with "failed" / "closed". */
 export const getRemoteTracks = (service: ServiceChannel<RtcConnectionEvents>): Promise<{ audio: TrackInfo, video: TrackInfo }> =>
   service._call("getRemoteTracks", [])
 
-/** Leave this peer's sound out of what is played. */
+/** Leave this peer's sound out of what is played.
+ *  Rejects with "failed" / "closed". */
 export const setRemoteAudioMuted = (service: ServiceChannel<RtcConnectionEvents>, muted: boolean): Promise<void> =>
   service._call("setRemoteAudioMuted", [muted])
 
-/** Rejects with "closed". */
+/** Zeros, state "new", before the first description.
+ *  Rejects with "failed" / "closed". */
 export const getStats = (service: ServiceChannel<RtcConnectionEvents>): Promise<ConnectionStats> =>
   service._call("getStats", [])
 
@@ -53,7 +57,8 @@ export const getStats = (service: ServiceChannel<RtcConnectionEvents>): Promise<
 export const createDataChannel = (service: ServiceChannel<RtcConnectionEvents>, label: string, options?: DataChannelInit): Promise<number> =>
   service._call("createDataChannel", [label, options])
 
-/** Rejects with "notFound" / "failed" / "closed". */
+/** A message of at most 64 KB.
+ *  Rejects with "notFound" / "failed" / "closed". */
 export const sendText = (service: ServiceChannel<RtcConnectionEvents>, channelId: number, text: string): Promise<void> =>
   service._call("sendText", [channelId, text])
 
@@ -70,7 +75,7 @@ export const getBufferedAmount = (service: ServiceChannel<RtcConnectionEvents>, 
 export const setBufferedAmountLowThreshold = (service: ServiceChannel<RtcConnectionEvents>, channelId: number, threshold: number): Promise<void> =>
   service._call("setBufferedAmountLowThreshold", [channelId, threshold])
 
-/** A no-op for an unknown id. */
+/** `dataChannelClose` follows. A no-op for an unknown id. */
 export const closeDataChannel = (service: ServiceChannel<RtcConnectionEvents>, channelId: number): Promise<void> =>
   service._call("closeDataChannel", [channelId])
 
@@ -99,22 +104,27 @@ export class RtcConnectionBase extends ServiceChannel<RtcConnectionEvents> {
   /** The offering side: takes the answer.
    *  Rejects with "failed" / "closed". */
   acceptAnswer(answer: string): Promise<void> { return acceptAnswer(this, answer) }
-  /** A candidate of the other side (its `candidate:` line), or a relay's. */
+  /** A candidate of the other side (its `candidate:` line), or a relay's; "" = it has no more.
+   *  A line that cannot be read (a name instead of an address) is skipped, not an error. */
   addIceCandidate(candidate: string): Promise<void> { return addIceCandidate(this, candidate) }
   /** Send a local track of rtcMedia (the microphone, the camera); null = stop sending that kind.
    *  Rejects with "notFound" / "failed" / "closed". */
   setTrack(kind: MediaKind, trackId: string | null): Promise<void> { return setTrack(this, kind, trackId) }
   /** The two tracks this connection receives; they exist from the start (`muted` until the other
-   *  side sends). The video one goes to rtcVideo's setTrack; the audio one plays by itself. */
+   *  side sends). The video one goes to rtcVideo's setTrack; the audio one plays by itself.
+   *  Rejects with "failed" / "closed". */
   getRemoteTracks(): Promise<{ audio: TrackInfo, video: TrackInfo }> { return getRemoteTracks(this) }
-  /** Leave this peer's sound out of what is played. */
+  /** Leave this peer's sound out of what is played.
+   *  Rejects with "failed" / "closed". */
   setRemoteAudioMuted(muted: boolean): Promise<void> { return setRemoteAudioMuted(this, muted) }
-  /** Rejects with "closed". */
+  /** Zeros, state "new", before the first description.
+   *  Rejects with "failed" / "closed". */
   getStats(): Promise<ConnectionStats> { return getStats(this) }
   /** Resolves with the channel's id; `dataChannelOpen` says when it can send.
    *  Rejects with "failed" / "closed". */
   createDataChannel(label: string, options?: DataChannelInit): Promise<number> { return createDataChannel(this, label, options) }
-  /** Rejects with "notFound" / "failed" / "closed". */
+  /** A message of at most 64 KB.
+   *  Rejects with "notFound" / "failed" / "closed". */
   sendText(channelId: number, text: string): Promise<void> { return sendText(this, channelId, text) }
   /** Rejects with "notFound" / "failed" / "closed". */
   sendBinary(channelId: number, data: Uint8Array): Promise<void> { return sendBinary(this, channelId, data) }
@@ -123,22 +133,6 @@ export class RtcConnectionBase extends ServiceChannel<RtcConnectionEvents> {
   getBufferedAmount(channelId: number): Promise<number> { return getBufferedAmount(this, channelId) }
   /** Rejects with "notFound". */
   setBufferedAmountLowThreshold(channelId: number, threshold: number): Promise<void> { return setBufferedAmountLowThreshold(this, channelId, threshold) }
-  /** A no-op for an unknown id. */
+  /** `dataChannelClose` follows. A no-op for an unknown id. */
   closeDataChannel(channelId: number): Promise<void> { return closeDataChannel(this, channelId) }
 }
-
-export type RtcConnection = RtcConnectionBase & {
-  /** Whether this host registered the service "rtcConnection". */
-  readonly supported: boolean
-  /** Whether the host's half has `method`: false on a host whose half is older than it. */
-  supports(method: Method): boolean
-}
-
-// PURE IIFE: an app that never names RtcConnection carries none of this file. One session for the app's
-// life, opened by the first call.
-export const RtcConnection: RtcConnection = /*#__PURE__*/ (() => {
-  const service = new RtcConnectionBase()
-  Object.defineProperty(service, "supported", { get: (): boolean => supports() })
-  Object.defineProperty(service, "supports", { value: supports })
-  return service as any
-})()
