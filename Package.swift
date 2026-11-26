@@ -31,6 +31,7 @@ let package = Package(
         .library(name: "LeCodesNativeUI", targets: ["LeCodesNativeUI"]),
         .library(name: "LeCodesPush", targets: ["LeCodesPush"]),
         .library(name: "LeCodesQRScanner", targets: ["LeCodesQRScanner"]),
+        .library(name: "LeCodesRtc", targets: ["LeCodesRtc"]),
         .library(name: "LeCodesSpeech", targets: ["LeCodesSpeech"]),
         .library(name: "LeCodesTorch", targets: ["LeCodesTorch"]),
         .library(name: "LeCodesWebRTC", targets: ["LeCodesWebRTC"]),
@@ -120,6 +121,13 @@ let package = Package(
             dependencies: [.product(name: "LeCodes", package: "lecodes")],
             path: "plugins/qr-scanner/ios"
         ),
+        // rtc
+        .target(
+            name: "LeCodesRtc",
+            dependencies: [.product(name: "LeCodes", package: "lecodes"), "TinyRTCCore"],
+            path: "plugins/rtc/ios"
+        ),
+        .binaryTarget(name: "TinyRTCCore", path: "plugins/rtc/binaries/ios/TinyRTCCore.xcframework"),
         // speech
         .target(
             name: "LeCodesSpeech",

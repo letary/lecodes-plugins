@@ -1,0 +1,4 @@
+module TinyRTCCore {
+    header "tinyrtc.h"
+    export *
+}

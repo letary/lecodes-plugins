@@ -1,0 +1,28 @@
+{
+  "id": "rtc",
+  "name": "RTC",
+  "version": "2.0.0",
+  "sdk": "^2.0.0",
+  "description": "Real-time audio, video and data between peers: calls between LeCodes apps, and with a browser, over one fixed profile (Opus, H.264 through the hardware codec, data channels). tinyrtc on iOS and Android, the browser's WebRTC on the web. Signaling is the app's; a call without a direct path crosses a relay of a tinyrtc media server.",
+  "ios": {
+    "module": "LeCodesRtc",
+    "register": "LeCodesRtcPlugin",
+    "infoPlist": {
+      "NSCameraUsageDescription": "The app uses the camera for video calls.",
+      "NSMicrophoneUsageDescription": "The app uses the microphone for calls."
+    },
+    "binaries": [
+      "binaries/ios/TinyRTCCore.xcframework"
+    ]
+  },
+  "android": {
+    "module": "lecodes-rtc",
+    "register": "io.letary.lecodes.plugins.rtc.LeCodesRtcPlugin",
+    "dependencies": [
+      "org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2"
+    ]
+  },
+  "web": {
+    "register": "web/rtc.ts"
+  }
+}
