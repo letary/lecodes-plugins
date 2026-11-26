@@ -96,8 +96,13 @@ public struct RtcIceServer: Sendable, Equatable {
 
 public struct RtcConfiguration: Sendable, Equatable {
     public var iceServers: [RtcIceServer]
-    /// Never reveal an address of this device: no candidate of its own is put into a description
-    /// or raised as an event, so the only path is through a candidate the app adds (a relay's).
+    /// Never reveal an address of this device: the only path is a relay's candidate the app adds
+    /// (`typ relay`: the media server's), whatever else it adds. No candidate of its own is put
+    /// into a description (an ICE restart's too) or raised as an event; of the other side's
+    /// candidates — `addIceCandidate`, or inside its description — only `typ relay` ones are
+    /// taken, and a datagram from any other address is dropped, so the other side never hears
+    /// from this device's address. Without a relay candidate it never connects; an ICE restart
+    /// needs a new relay reservation. The STUN servers of `iceServers` still see the address.
     public var relayOnly: Bool
 
     public init(iceServers: [RtcIceServer] = [], relayOnly: Bool = false) {

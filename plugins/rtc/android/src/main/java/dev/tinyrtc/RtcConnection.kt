@@ -11,8 +11,13 @@ data class RtcConfiguration(
     /** "stun:host:port" (anything else is ignored: there is no TURN). */
     val iceServers: List<IceServer> = emptyList(),
     /**
-     * Never reveal an address of this device: no candidate of its own is put into a description or
-     * raised as an event, so the only path is through a candidate the app adds (a relay's).
+     * Never reveal an address of this device: the only path is a relay's candidate the app adds
+     * (`typ relay`: the media server's), whatever else it adds. No candidate of its own is put into
+     * a description (an ICE restart's too) or raised as an event; of the other side's candidates —
+     * [RtcConnection.addIceCandidate], or inside its description — only `typ relay` ones are taken,
+     * and a datagram from any other address is dropped, so the other side never hears from this
+     * device's address. Without a relay candidate it never connects; an ICE restart needs a new
+     * relay reservation. The STUN servers of [iceServers] still see the address (they are asked).
      */
     val relayOnly: Boolean = false,
 )
@@ -142,7 +147,10 @@ class RtcConnection internal constructor(private val engine: RtcEngine, config: 
         checkStatus(Native.acceptAnswer(h, sdp.utf8()), "acceptAnswer")
     }
 
-    /** A candidate of the other side (its `candidate:` line); null = it has no more. */
+    /**
+     * A candidate of the other side (its `candidate:` line), or a relay's (`typ relay`); null = it
+     * has no more. Under [RtcConfiguration.relayOnly] a line that is not `typ relay` is ignored.
+     */
     fun addIceCandidate(candidate: String?) {
         Core.checkMain("addIceCandidate")
         if (isClosed) throw RtcError.Closed("addIceCandidate: the connection is closed")

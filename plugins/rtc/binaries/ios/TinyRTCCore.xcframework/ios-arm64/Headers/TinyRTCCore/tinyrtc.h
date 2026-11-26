@@ -225,10 +225,16 @@ typedef struct {
 typedef struct {
   const tinyrtc_ice_server *ice_servers;
   size_t ice_server_count;
-  // 1 = never reveal an address of ours: the connection still sends from its own (host,
-  // reflexive) candidates, but no description it makes carries an a=candidate line and no
-  // TINYRTC_EVENT_LOCAL_CANDIDATE is emitted, so the only path is through a candidate the app
-  // adds (a relay, such as the media server's blind relay of a 1:1 call).
+  // 1 = never reveal an address of ours: the only path is a relay candidate the app adds (the
+  // media server's blind relay of a 1:1 call), whatever else it adds. Ours are never shown: the
+  // connection still sends from its own (host, reflexive) candidates, but no description it makes
+  // carries an a=candidate line (an ICE restart's neither) and no TINYRTC_EVENT_LOCAL_CANDIDATE is
+  // emitted. Theirs are never checked: of the other side's candidates — added, or inside a
+  // description — only `typ relay` ones are taken (any other kind is ignored), and a datagram from
+  // an address that is not such a relay is dropped. So the call needs a relay candidate to
+  // connect, and the other side never hears from our address. What still sees it: the relay, and
+  // the STUN servers of ice_servers (they are asked; their answer is never shown). An ICE restart
+  // has new credentials: the media server's relay needs a new reservation for them.
   uint8_t relay_only;
   void (*event)(void *user, const tinyrtc_event *event);
   void *user;
@@ -245,7 +251,8 @@ tinyrtc_status tinyrtc_connection_offer(tinyrtc_connection *connection, uint8_t 
 tinyrtc_status tinyrtc_connection_accept_offer(tinyrtc_connection *connection, const char *offer, tinyrtc_text *answer);
 // The offering side: take the answer. SYNC.
 tinyrtc_status tinyrtc_connection_accept_answer(tinyrtc_connection *connection, const char *answer);
-// A candidate of the other side; NULL = it has no more.
+// A candidate of the other side, or a relay's (`typ relay`: the media server's line); NULL = it
+// has no more. One that does not parse, or (relay_only) is not a relay's, is ignored.
 tinyrtc_status tinyrtc_connection_add_candidate(tinyrtc_connection *connection, const char *candidate);
 
 // -- what this connection sends. Both off at creation.

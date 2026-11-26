@@ -282,7 +282,8 @@ public final class RtcConnection {
         }
     }
 
-    /// A `candidate:` line of the other side; nil = it has no more. Nothing after `close()`.
+    /// A `candidate:` line of the other side, or a relay's (`typ relay`); nil = it has no more.
+    /// Under `relayOnly` a line that is not `typ relay` is ignored. Nothing after `close()`.
     public func addIceCandidate(_ line: String?) {
         core.post { handle in
             if let line {
