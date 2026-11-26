@@ -34,12 +34,10 @@ let package = Package(
         .library(name: "LeCodesRtc", targets: ["LeCodesRtc"]),
         .library(name: "LeCodesSpeech", targets: ["LeCodesSpeech"]),
         .library(name: "LeCodesTorch", targets: ["LeCodesTorch"]),
-        .library(name: "LeCodesWebRTC", targets: ["LeCodesWebRTC"]),
     ],
     dependencies: [
         .package(name: "lecodes", path: sdk),
         .package(url: "https://github.com/maplibre/maplibre-gl-native-distribution", exact: "6.29.0"),
-        .package(url: "https://github.com/stasel/WebRTC", exact: "154.0.0"),
     ],
     targets: [
         // apple-sign-in
@@ -139,12 +137,6 @@ let package = Package(
             name: "LeCodesTorch",
             dependencies: [.product(name: "LeCodes", package: "lecodes")],
             path: "plugins/torch/ios"
-        ),
-        // webrtc
-        .target(
-            name: "LeCodesWebRTC",
-            dependencies: [.product(name: "LeCodes", package: "lecodes"), .product(name: "WebRTC", package: "WebRTC")],
-            path: "plugins/webrtc/ios"
         ),
     ]
 )

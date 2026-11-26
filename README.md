@@ -91,7 +91,7 @@ export interface CameraView extends View<"camera", CameraParams, CameraEvents> {
   rejects with `denied` when one was refused — the half never sees a dialog (the web half asks
   nothing: the browser's API prompts itself). `lecodes plugin gen` holds the manifests to it: the
   usage string in `ios.infoPlist`, the `<uses-permission>` in the Android manifest. A call whose
-  need depends on its arguments (webrtc's `getUserMedia`) asks by hand through the same service
+  need depends on its arguments (rtc's `getUserMedia`) asks by hand through the same service
   (`engine.permissions.ensure`). A view that needs a permission to mount asks in its wrapper
   (`prepareCamera`), through the SDK's `permissions`.
 - `@lazy` on an event of a View or a Service: the half sends it only while the app has a listener
@@ -184,7 +184,7 @@ export interface CameraView extends View<"camera", CameraParams, CameraEvents> {
 | `health` | service | `health` | no: a browser has no health store |
 | `torch` | service | `torch` | no: a browser lets no page light the torch (a camera stream's `torch` constraint is the camera's, on a few Android browsers) |
 | `browser` | service + view | `browser`, `webView` | yes: a popup, an iframe (own-origin pages) |
-| `webrtc` | service + view | `rtcMedia`, `rtcPeerConnection`, `rtcVideo` | yes: the browser's own WebRTC |
+| `rtc` | service + view | `rtcMedia`, `rtcConnection`, `rtcVideo` | yes: the browser's own WebRTC, held to the profile of tinyrtc (the iOS and Android halves), so a tab calls a phone |
 | `ar` | service | `ar` | yes: WebXR where Chrome has it (ARCore: hit tests, anchors, QR codes — qr-anchor's wasm), else the camera under the scene, turned by the sensors (no planes, no images) |
 
 ## Naming
