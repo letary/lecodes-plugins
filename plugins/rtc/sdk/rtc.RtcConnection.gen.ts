@@ -26,8 +26,9 @@ export const acceptOffer = (service: ServiceChannel<RtcConnectionEvents>, offer:
 export const acceptAnswer = (service: ServiceChannel<RtcConnectionEvents>, answer: string): Promise<void> =>
   service._call("acceptAnswer", [answer])
 
-/** A candidate of the other side (its `candidate:` line), or a relay's; "" = it has no more.
- *  A line that cannot be read (a name instead of an address) is skipped, not an error. */
+/** A candidate of the other side (its `candidate:` line), or a relay's (`typ relay`); "" = it
+ *  has no more. A line that cannot be read (a name instead of an address) is skipped, not an
+ *  error; so is, on a `relayOnly` connection, any line that is not `typ relay`. */
 export const addIceCandidate = (service: ServiceChannel<RtcConnectionEvents>, candidate: string): Promise<void> =>
   service._call("addIceCandidate", [candidate])
 
@@ -104,8 +105,9 @@ export class RtcConnectionBase extends ServiceChannel<RtcConnectionEvents> {
   /** The offering side: takes the answer.
    *  Rejects with "failed" / "closed". */
   acceptAnswer(answer: string): Promise<void> { return acceptAnswer(this, answer) }
-  /** A candidate of the other side (its `candidate:` line), or a relay's; "" = it has no more.
-   *  A line that cannot be read (a name instead of an address) is skipped, not an error. */
+  /** A candidate of the other side (its `candidate:` line), or a relay's (`typ relay`); "" = it
+   *  has no more. A line that cannot be read (a name instead of an address) is skipped, not an
+   *  error; so is, on a `relayOnly` connection, any line that is not `typ relay`. */
   addIceCandidate(candidate: string): Promise<void> { return addIceCandidate(this, candidate) }
   /** Send a local track of rtcMedia (the microphone, the camera); null = stop sending that kind.
    *  Rejects with "notFound" / "failed" / "closed". */

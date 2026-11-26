@@ -269,8 +269,12 @@ export interface RtcIceServer { urls: string | string[] }
 export interface RtcConnectionOptions {
   /** STUN servers; the reflexive address a server sees is offered as a candidate. */
   iceServers?: RtcIceServer[]
-  /** Never reveal an address of this device: no candidate of its own goes into a description or
-   *  out as `icecandidate`, so the only path is a candidate the app adds — the relay's. Default false. */
+  /** Never reveal an address of this device: the only path is the relay's candidate the app adds
+   *  (`typ relay`), whatever else it adds — no candidate of its own goes into a description or out
+   *  as `icecandidate`, and of the other side's only `typ relay` ones are taken (passed to
+   *  `addIceCandidate` or inside its description: every other kind is ignored), so the two never
+   *  meet directly. Without a relay candidate it never connects; after an ICE restart, add the new
+   *  reservation's. Default false. */
   relayOnly?: boolean
 }
 
@@ -374,7 +378,8 @@ export class RtcConnection extends RtcEventTarget<RtcConnectionEventMap> {
   acceptAnswer(answer: string): Promise<void> {
     return this._closedByApp ? Promise.reject(closedError()) : this._s.acceptAnswer(answer)
   }
-  /** A candidate of the other side (its `candidate:` line), or a relay's. */
+  /** A candidate of the other side (its `candidate:` line), or a relay's (`typ relay`). A line that
+   *  cannot be read is skipped; so is, on a `relayOnly` connection, any that is not `typ relay`. */
   addIceCandidate(candidate: string): Promise<void> {
     return this._closedByApp ? Promise.reject(closedError()) : this._s.addIceCandidate(candidate)
   }

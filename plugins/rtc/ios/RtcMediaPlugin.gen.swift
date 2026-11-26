@@ -282,9 +282,17 @@ public struct IceServer {
 
 public struct RtcConnectionParams {
     public var iceServers: [IceServer]?
-    /// Never reveal an address of this device: no candidate of its own is put into a description
-    /// or raised as `iceCandidate`, so the only path is through a candidate the app adds — the
-    /// relay's. Default false.
+    /// Never reveal an address of this device: the only path is a relay's candidate the app adds
+    /// (`typ relay`: a tinyrtc media server's), whatever else it adds. No candidate of its own is
+    /// put into a description (an ICE restart's too) or raised as `iceCandidate`; and of the other
+    /// side's candidates — `addIceCandidate`, or a=candidate lines inside a remote description —
+    /// only `typ relay` ones are taken, every other kind is ignored, so this device never checks
+    /// the other side's addresses and the other side never hears from its own. Without a relay
+    /// candidate it never connects; an ICE restart needs a new relay reservation (new
+    /// credentials), whose candidate is added again. Still sees the address: the relay, and the
+    /// STUN servers of `iceServers` (they are asked; what they answer is never shown). Not for a
+    /// connection to a media server's room (its candidate is the server's own, not a relay's).
+    /// Default false.
     public var relayOnly: Bool?
 
     public init(iceServers: [IceServer]? = nil, relayOnly: Bool? = nil) {
@@ -712,8 +720,9 @@ public protocol RtcConnectionPlugin: AnyObject {
     /// The offering side: takes the answer.
     /// Rejects with .failed / .closed.
     func acceptAnswer(_ answer: String, _ reply: Reply<Void, RtcConnectionCode>)
-    /// A candidate of the other side (its `candidate:` line), or a relay's; "" = it has no more.
-    /// A line that cannot be read (a name instead of an address) is skipped, not an error.
+    /// A candidate of the other side (its `candidate:` line), or a relay's (`typ relay`); "" = it
+    /// has no more. A line that cannot be read (a name instead of an address) is skipped, not an
+    /// error; so is, on a `relayOnly` connection, any line that is not `typ relay`.
     func addIceCandidate(_ candidate: String, _ reply: Reply<Void, RtcConnectionCode>)
     /// Send a local track of rtcMedia (the microphone, the camera); null = stop sending that kind.
     /// Rejects with .notFound / .failed / .closed.

@@ -21,8 +21,16 @@
 //     with the bundle); a remote one is added to the first line of the remote description (every
 //     line is bundled), so the app passes no mid; one added before the remote description waits for
 //     it; a line the browser cannot read is skipped, as the native halves skip one;
-//   - `relayOnly` strips this device's addresses from what the app is handed (the candidate lines,
-//     the connection addresses and ports) and raises no `iceCandidate`;
+//   - `relayOnly` is tinyrtc's rule, both halves of it. This device's addresses are stripped from
+//     what the app is handed (the candidate lines, the connection addresses and ports — an ICE
+//     restart's description too) and no `iceCandidate` is raised. And the other side's are never
+//     checked: of the candidates the app passes — `addIceCandidate`, or a=candidate lines inside a
+//     remote description, which are taken out before the browser sees it — only `typ relay` ones
+//     reach the browser (a host, srflx, prflx or mDNS one is dropped), so the browser checks the
+//     relay alone, from its own host candidates, and the other side never hears from this device's
+//     address. What the browser cannot be told: to ignore a check from an address it was not given
+//     (it would answer one, as a peer-reflexive candidate) — none comes, as no one is given an
+//     address of this device; the STUN servers of `iceServers` still see it (they are asked);
 //   - a disabled local track is NOT SENT (the sender's track is replaced by none, so the other side
 //     gets no black frames and its track goes muted), the device stays open; a camera switched by
 //     applyConstraints is a new browser track under the same id: every sender and picture follows;
@@ -293,6 +301,19 @@ const hideAddresses = (sdp: string): string => sdp.split(/\r\n/)
     : line)
   .join("\r\n")
 
+/** The type of a `candidate:` line (with or without `a=`): "host", "srflx", "prflx", "relay"; null
+ *  for what is not one. */
+const candidateType = (line: string): string | null => {
+  const words = line.trim().replace(/^a=/, "").split(/\s+/)
+  return words[0]?.startsWith("candidate:") && words[6] === "typ" ? words[7] ?? null : null
+}
+
+/** What a `relayOnly` connection lets the browser see of a remote description: no candidate of the
+ *  other side but a relay's. */
+const relayCandidatesOnly = (sdp: string): string => sdp.split(/\r?\n/)
+  .filter((line) => !line.startsWith("a=candidate") || candidateType(line) === "relay")
+  .join("\r\n")
+
 /** The mid of a description's first line: the bundle, where a remote candidate goes. */
 const firstMid = (sdp: string): string | null => /^a=mid:(\S+)/m.exec(sdp)?.[1] ?? null
 
@@ -391,7 +412,7 @@ class Session implements RtcConnectionPlugin {
   async acceptOffer(offer: string): Promise<string> {
     this.guard()
     const codecs = this.described ? null : profileCodecs()
-    try { await this.pc.setRemoteDescription({ type: "offer", sdp: offer }) } catch (e) { throw pcCode(e) }
+    try { await this.pc.setRemoteDescription({ type: "offer", sdp: this.taken(offer) }) } catch (e) { throw pcCode(e) }
     this.guard()
     if (codecs && !this.described) {
       const lines = this.pc.getTransceivers()
@@ -412,7 +433,7 @@ class Session implements RtcConnectionPlugin {
 
   async acceptAnswer(answer: string): Promise<void> {
     this.guard()
-    try { await this.pc.setRemoteDescription({ type: "answer", sdp: answer }) } catch (e) { throw pcCode(e) }
+    try { await this.pc.setRemoteDescription({ type: "answer", sdp: this.taken(answer) }) } catch (e) { throw pcCode(e) }
     await this.addPendingCandidates()
     this.applyBitrate()
   }
@@ -421,6 +442,8 @@ class Session implements RtcConnectionPlugin {
     this.guard()
     const candidate = line.trim().replace(/^a=/, "")
     if (!candidate.startsWith("candidate:")) return
+    // relay only: no candidate of the other side but a relay's ever reaches the browser
+    if (this.hidden && candidateType(candidate) !== "relay") return
     if (!this.pc.remoteDescription) { this.pendingCandidates.push(candidate); return }
     await this.addNow(candidate)
   }
@@ -531,6 +554,8 @@ class Session implements RtcConnectionPlugin {
   private guard(): void { if (this.closed) throw new RtcConnectionError("closed") }
 
   private shown(sdp: string): string { return this.hidden ? hideAddresses(sdp) : sdp }
+  /** What the browser is given of a remote description: relay only, no candidate but a relay's. */
+  private taken(sdp: string): string { return this.hidden ? relayCandidatesOnly(sdp) : sdp }
 
   /** The lines exist: the received tracks are theirs, the wanted tracks go out, the channels asked
    *  for meanwhile are made, the received audio plays. */
