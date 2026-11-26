@@ -82,7 +82,7 @@ public struct RtcDevice: Sendable, Equatable {
 }
 
 public struct RtcIceServer: Sendable, Equatable {
-    /// "stun:host:port" | "turn:host:port?transport=udp|tcp" | "turns:host:port"
+    /// "stun:host:port" (anything else is ignored: there is no TURN)
     public var url: String
     public var username: String?
     public var credential: String?
@@ -96,7 +96,8 @@ public struct RtcIceServer: Sendable, Equatable {
 
 public struct RtcConfiguration: Sendable, Equatable {
     public var iceServers: [RtcIceServer]
-    /// Only through TURN (hides the addresses).
+    /// Never reveal an address of this device: no candidate of its own is put into a description
+    /// or raised as an event, so the only path is through a candidate the app adds (a relay's).
     public var relayOnly: Bool
 
     public init(iceServers: [RtcIceServer] = [], relayOnly: Bool = false) {
@@ -121,7 +122,7 @@ public struct RtcDataChannelOptions: Sendable, Equatable {
 /// The numbers of a connection: the core's one fixed struct.
 public struct RtcStats: Sendable, Equatable {
     public var state: RtcConnectionState
-    /// The path goes through TURN.
+    /// Not reported yet: always false.
     public var relayed: Bool
     public var rttMs: UInt32
     /// What the network is believed to carry.

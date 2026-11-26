@@ -8,10 +8,13 @@ import android.hardware.camera2.CameraCharacteristics
 import android.hardware.camera2.CameraDevice
 import android.hardware.camera2.CameraManager
 import android.hardware.camera2.CaptureRequest
+import android.hardware.camera2.params.OutputConfiguration
 import android.hardware.display.DisplayManager
 import android.media.MediaCodec
+import android.os.Build
 import android.os.Handler
 import android.os.HandlerThread
+import android.os.SystemClock
 import android.util.Range
 import android.util.Size
 import android.view.Display
@@ -24,9 +27,9 @@ import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.min
 import kotlinx.coroutines.CancellableContinuation
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
-import kotlinx.coroutines.withContext
 
 /** What the camera's track did (diagnostics, e.g. for a call screen's debug overlay). */
 data class VideoTrackDiagnostics(
@@ -52,14 +55,21 @@ data class VideoTrackDiagnostics(
 internal data class PreviewGeometry(val width: Int, val height: Int, val sensorOrientation: Int, val facing: Facing)
 
 /**
- * The sending side of the camera. Camera2 opens the device; ONE capture session has two outputs:
- * the encoder's input Surface (MediaCodec, H.264) and, while a view shows the track, the view's
- * SurfaceTexture. The ISP scales each output to its own size, so a smaller target is a smaller
+ * The sending side of the camera. Camera2 opens the device; ONE capture session has two streams:
+ * the encoder's input Surface (MediaCodec, H.264) and, while views show the track, the preview —
+ * one view's SurfaceTexture, or the SurfaceTextures of several views sharing that one stream
+ * ([rebuildSession]). The ISP scales each stream to its own size, so a smaller target is a smaller
  * encoder — recreated, with a new session (the first frame after is an IDR with its parameter
  * sets) — while the preview keeps the camera's format. No GL pass, no copy of a pixel.
  *
  * Frames are encoded as the sensor gives them; the degrees to show them upright (sensor
  * orientation, display rotation, facing) go with each frame to tinyrtc_video_source_send.
+ *
+ * A camera runs once its session is configured: [start] and [apply] return then. One that fails
+ * before (it does not open, it errors, it takes no session, no encoder takes its size) fails
+ * [start]; for [apply] the track goes back to the camera and format it had, and ends ([onEnded])
+ * only when that one fails too ([openFailed]). Cancelled at any point, [start] leaves nothing
+ * behind: [close] lets go of whatever exists by then, a camera still opening included.
  *
  * Threads: everything here runs on one HandlerThread ("tinyrtc-video"): the camera's callbacks,
  * the session, the encoder's callbacks, the core's targets (posted). The core's source is created
@@ -101,18 +111,43 @@ internal class CameraPipeline(private val engine: RtcEngine, private var options
         val preview: Size,
         val fpsRanges: List<Range<Int>>,
         val fps: Int,
+        /** How many views may share the preview stream; 1 = no sharing (see [select]). */
+        val views: Int,
     )
 
+    /** A start() or an apply() waiting for its camera to run. */
+    private class Opening(
+        val cont: CancellableContinuation<Unit>,
+        /** What an apply() goes back to when the camera it asked for fails; null for start(). */
+        val back: Back?,
+        /** Set while going back: what the apply() throws once the camera before runs again. */
+        val failure: RtcError? = null,
+    )
+
+    /** A camera and format the track ran at (or was paused on). */
+    private class Back(val options: CameraOptions, val spec: Spec, val paused: Boolean)
+
     private lateinit var spec: Spec
+    /** The openCamera in use or under way; [device] once it opened. */
+    private var current: DeviceOpen? = null
     private var device: CameraDevice? = null
+    /** Every openCamera not over yet: the thread ends once each said onClosed ([CLOSE_TIMEOUT_MS] at most). */
+    private val opens = ArrayList<DeviceOpen>()
+    private var opening: Opening? = null
+    /** The cameras no client has open, as the availability callback tells. */
+    private val free = HashSet<String>()
     private var attempt: SessionAttempt? = null
     /** Every session not over yet (the current one and those still closing). */
     private val attempts = ArrayList<SessionAttempt>()
+    /** Released in [finish]: what was let go of while the camera closed. */
+    private val atFinish = ArrayList<() -> Unit>()
     private val losses = ArrayList<Long>()
     private var encoder: VideoEncoder? = null
     private var encodeSize = Size(0, 0)
-    private var preview: Preview? = null
-    private var opening: CancellableContinuation<Unit>? = null
+    /** The views showing the track, in the order they came: the first ones get the preview. */
+    private val previews = ArrayList<Preview>()
+    /** Lowered when the camera refused a session with more previews; back up with each open. */
+    private var previewCap = Int.MAX_VALUE
     private var paused = false
     private var closed = false
     private var finished = false
@@ -132,7 +167,7 @@ internal class CameraPipeline(private val engine: RtcEngine, private var options
     private val keyframesOut = AtomicLong()
     private val keyframesAsked = AtomicLong()
 
-    private class Preview(val texture: SurfaceTexture, val surface: Surface, val geometry: (PreviewGeometry) -> Unit)
+    private class Preview(val texture: SurfaceTexture, val surface: Surface, val onGeometry: (PreviewGeometry) -> Unit)
 
     fun diagnostics(): VideoTrackDiagnostics {
         val e = encoder
@@ -145,27 +180,30 @@ internal class CameraPipeline(private val engine: RtcEngine, private var options
 
     // ---- lifecycle (any thread → the video thread) ----
 
-    /** Creates the core's source, opens the camera; returns once it is open. */
+    /**
+     * Creates the core's source, opens the camera; returns once it runs. Whatever stops it — an
+     * error, the caller's cancellation at any point — closes everything made so far.
+     */
     suspend fun start() {
-        val created = withContext(Core.lane) { Native.sourceCreate(engine.handle, key) }
-        if (created == 0L) {
-            close()
-            throw RtcError.Failed("the core made no video source")
-        }
-        source = created
         try {
-            suspendCancellableCoroutine<Unit> { cont -> handler.post { begin(options, cont) } }
+            source = madeOn(Core.lane, { Native.sourceCreate(engine.handle, key) }) { made ->
+                Core.scope.launch { Native.sourceDestroy(made) }
+            }
+            if (source == 0L) throw RtcError.Failed("the core made no video source")
+            suspendCancellableCoroutine<Unit> { cont -> post(cont) { begin(options, cont) } }
         } catch (e: Throwable) {
-            close()
+            close() // the camera (open or still opening), the encoder, the source, the thread, the key
             throw e
         }
-        applyLimits()
     }
 
-    /** Another camera, size or rate: the camera is reopened, the track and its source stay. */
+    /**
+     * Another camera, size or rate: the camera is reopened, the track and its source stay. When the
+     * camera asked for fails, the track is back on the one it had before this throws ([openFailed]).
+     * Cancelled, it stops waiting; the camera ends up on one or the other, nothing is left behind.
+     */
     suspend fun apply(next: CameraOptions) {
-        suspendCancellableCoroutine<Unit> { cont -> handler.post { begin(next, cont) } }
-        applyLimits()
+        suspendCancellableCoroutine<Unit> { cont -> post(cont) { begin(next, cont) } }
     }
 
     /** Idempotent, any thread (also a finalizer). */
@@ -173,53 +211,112 @@ internal class CameraPipeline(private val engine: RtcEngine, private var options
         handler.post { shutdown() }
     }
 
-    /** The most this camera's stream may take, bits per second; applied by [applyLimits]. */
+    /** The most this camera's stream may take, bits per second; [pushLimits] gives it to the core. */
     @Volatile
     var maxBitrate: Int = DEFAULT_MAX_BITRATE
 
-    /** The ceiling the core's target stays under: the app's bitrate, the camera's format. */
-    suspend fun applyLimits() {
+    /**
+     * The ceiling the core's target stays under: the app's bitrate, the camera's format. Any thread;
+     * on the lane, in order, reading the values when it runs (the last push has the last word).
+     */
+    fun pushLimits(): Job = Core.scope.launch {
+        val h = source
         val s = settings
-        val bitrate = maxBitrate
-        withContext(Core.lane) {
-            val h = source
-            if (h != 0L) Native.sourceSetLimits(h, bitrate, s.frameRate, min(s.width, s.height))
-        }
+        if (h != 0L) Native.sourceSetLimits(h, maxBitrate, s.frameRate, min(s.width, s.height))
+    }
+
+    private inline fun post(cont: CancellableContinuation<Unit>, crossinline block: () -> Unit) {
+        if (!handler.post { block() }) cont.resumeWithException(RtcError.Closed("the camera track is stopped"))
     }
 
     private fun begin(next: CameraOptions, cont: CancellableContinuation<Unit>) {
         if (closed) return cont.resumeWithException(RtcError.Closed("the camera track is stopped"))
+        if (cont.isCancelled) return // nobody waits for it: the camera stays as it is
         val chosen = try {
             select(next)
         } catch (e: Exception) {
+            // Nothing changed yet: the track goes on as it was.
             return cont.resumeWithException(e as? RtcError ?: RtcError.Failed("camera: ${e.message}"))
         }
         val first = !this::spec.isInitialized
-        if (!first) {
-            // Another camera: everything of the old one goes.
-            closeSession()
-            encoder?.let { old -> encoder = null; retire { old.release() } }
-            device?.close()
-            device = null
-        } else {
+        if (first) {
             readDisplay()
             displays.registerDisplayListener(displayListener, handler)
             manager.registerAvailabilityCallback(availability, handler)
         }
+        // An apply() still waiting gives way; what to go back to stays the camera that last ran.
+        val waiting = opening
+        opening = null
+        waiting?.let { it.cont.resumeWithException(it.failure ?: RtcError.Closed("another apply() came first")) }
+        val back = if (first) null else waiting?.back ?: Back(options, spec, paused)
+        switchTo(next, chosen, Opening(cont, back))
+    }
+
+    /** The camera in use goes (device, encoder, session); [chosen] opens for [o]. */
+    private fun switchTo(next: CameraOptions, chosen: Spec, o: Opening) {
+        releaseCamera()
+        use(next, chosen)
+        opening = o
+        try {
+            openDevice()
+        } catch (e: RtcError) {
+            openFailed(e)
+        }
+    }
+
+    private fun use(next: CameraOptions, chosen: Spec) {
         options = next
         spec = chosen
         settings = VideoSettings(chosen.id, chosen.facing, chosen.capture.width, chosen.capture.height, chosen.fps)
         encodeSize = encodeSizeFor(targetHeight)
-        preview?.let { it.geometry(geometry()) }
-        opening?.resumeWithException(RtcError.Closed("another apply() came first"))
-        opening = cont
         paused = false
-        try {
-            openDevice()
-        } catch (e: RtcError) {
-            opening = null
-            cont.resumeWithException(e)
+        val g = geometry()
+        previews.forEach { it.onGeometry(g) }
+    }
+
+    private fun releaseCamera() {
+        handler.removeCallbacks(resize)
+        wantedSize = null
+        encoder?.let { old -> encoder = null; retire { old.release() } } // once the session drawing into it closed
+        closeSession()
+        device?.close() // its onClosed takes it out of [opens]
+        device = null
+        current = null // one still opening closes its camera in onOpened
+    }
+
+    /**
+     * The camera being opened for [opening] failed. start() throws [error] (and closes everything).
+     * An apply() goes back to the camera and format the track had — reopened, or paused again if
+     * the OS held it — and throws then; when that camera fails too, the track ends.
+     */
+    private fun openFailed(error: RtcError) {
+        val o = opening ?: return
+        opening = null
+        releaseCamera()
+        val back = o.back ?: return o.cont.resumeWithException(error)
+        val failure = o.failure
+        if (failure != null) {
+            ended("camera ${spec.id} did not reopen after a failed apply(): ${error.message}")
+            return o.cont.resumeWithException(
+                failure.withMessage("${failure.message}; it did not reopen either (${error.message}): the track ended"),
+            )
         }
+        Log.w("apply(): ${error.message}: back to camera ${back.spec.id}")
+        val thrown = error.withMessage("apply(): ${error.message}; the track is back on camera ${back.spec.id}")
+        if (!back.paused) return switchTo(back.options, back.spec, Opening(o.cont, back, thrown))
+        use(back.options, back.spec)
+        paused = true
+        o.cont.resumeWithException(thrown)
+        if (spec.id in free) reopen()
+    }
+
+    /** The camera runs (its session is configured): the start() or apply() waiting returns. */
+    private fun running() {
+        val o = opening ?: return
+        opening = null
+        pushLimits()
+        val failure = o.failure
+        if (failure != null) o.cont.resumeWithException(failure) else o.cont.resume(Unit)
     }
 
     private fun shutdown() {
@@ -227,7 +324,7 @@ internal class CameraPipeline(private val engine: RtcEngine, private var options
         closed = true
         opening?.let {
             opening = null
-            it.resumeWithException(RtcError.Closed("the camera track is stopped"))
+            it.cont.resumeWithException(RtcError.Closed("the camera track is stopped"))
         }
         Registry.remove(key)
         if (this::spec.isInitialized) {
@@ -237,27 +334,27 @@ internal class CameraPipeline(private val engine: RtcEngine, private var options
         handler.removeCallbacks(resize)
         val enc = encoder
         encoder = null
-        val pv = preview
-        preview = null
         enc?.let { retire { it.release() } }
-        pv?.let { retire { it.surface.release() } } // the texture is the view's until it lets go (detachPreview)
+        previews.forEach { p -> retire { p.surface.release() } } // the texture is the view's until it lets go (detachPreview)
+        previews.clear()
         closeSession()
-        val dev = device
         device = null
-        if (dev != null) {
-            dev.close() // onClosed finishes; a camera that never says so is given 2 s
-            handler.postDelayed({ finish() }, 2000)
-        } else {
-            finish()
-        }
+        current = null
+        // Every camera open or still opening closes (one still opening, in its onOpened); the thread
+        // ends when the last says onClosed. A camera service that never answers is given a while.
+        opens.toList().forEach { it.camera?.close() }
+        if (opens.isEmpty()) finish() else handler.postDelayed({ finish() }, CLOSE_TIMEOUT_MS)
     }
 
     /** After the camera stopped drawing into anything: the source goes (on the lane), then the thread. */
     private fun finish() {
         if (finished) return
         finished = true
+        if (opens.isNotEmpty()) Log.w("camera ${opens.joinToString { it.id }} did not say it closed: the thread ends anyway")
         attempt = null
         attempts.toList().forEach { it.done() }
+        atFinish.forEach { runCatching(it) }
+        atFinish.clear()
         Core.scope.launch {
             synchronized(sourceLock) {
                 val h = source
@@ -290,6 +387,12 @@ internal class CameraPipeline(private val engine: RtcEngine, private var options
         val preview = if (capture in previewSizes) capture else closest(previewSizes, capture.width, capture.height) ?: capture
         val ranges = chars[CameraCharacteristics.CONTROL_AE_AVAILABLE_TARGET_FPS_RANGES]?.toList().orEmpty()
         val top = ranges.maxOfOrNull { it.upper } ?: 30
+        // LEGACY and LIMITED guarantee two streams of this kind (PRIV: the encoder, one preview),
+        // never three: several views share the one preview stream (surface sharing, Android 8+),
+        // up to what the platform shares ([rebuildSession]). A LEGACY camera keeps to one view.
+        val level = chars[CameraCharacteristics.INFO_SUPPORTED_HARDWARE_LEVEL]
+        val sharing = Build.VERSION.SDK_INT >= 26 && level != null &&
+            level != CameraCharacteristics.INFO_SUPPORTED_HARDWARE_LEVEL_LEGACY
         return Spec(
             id = id,
             facing = facingOf(chars),
@@ -299,6 +402,7 @@ internal class CameraPipeline(private val engine: RtcEngine, private var options
             preview = preview,
             fpsRanges = ranges,
             fps = o.frameRate.coerceIn(1, top),
+            views = if (sharing) Int.MAX_VALUE else 1,
         )
     }
 
@@ -323,8 +427,9 @@ internal class CameraPipeline(private val engine: RtcEngine, private var options
 
     @SuppressLint("MissingPermission") // openCamera() checked it; a revoked one throws SecurityException
     private fun openDevice() {
+        val open = DeviceOpen(spec.id)
         try {
-            manager.openCamera(spec.id, deviceCallback, handler)
+            manager.openCamera(spec.id, open, handler)
         } catch (e: SecurityException) {
             throw RtcError.Denied("the CAMERA permission is missing")
         } catch (e: CameraAccessException) {
@@ -332,47 +437,48 @@ internal class CameraPipeline(private val engine: RtcEngine, private var options
         } catch (e: IllegalArgumentException) {
             throw RtcError.NotFound("camera ${spec.id}: ${e.message}")
         }
+        opens += open
+        current = open
     }
 
-    private val deviceCallback = object : CameraDevice.StateCallback() {
+    /** One openCamera, with callbacks of its own: a late callback of an older open is known as such. */
+    private inner class DeviceOpen(val id: String) : CameraDevice.StateCallback() {
+        var camera: CameraDevice? = null
+
         override fun onOpened(camera: CameraDevice) {
-            if (closed || camera.id != spec.id) {
-                camera.close()
-                return
-            }
+            this.camera = camera
+            if (closed || this !== current) return camera.close()
             device = camera
-            paused = false
+            previewCap = Int.MAX_VALUE
             Log.i("camera ${camera.id} open: ${spec.capture} @${spec.fps}, sensor ${spec.sensorOrientation}°, ${spec.facing}")
-            if (ensureEncoder()) rebuildSession()
-            opening?.let {
-                opening = null
-                it.resume(Unit)
-            }
+            ensureEncoder()?.let { return failed(it) }
+            rebuildSession()
         }
 
-        override fun onDisconnected(camera: CameraDevice) = lost(camera, "disconnected")
+        override fun onDisconnected(camera: CameraDevice) = lost(this, camera, "disconnected")
 
-        override fun onError(camera: CameraDevice, error: Int) = lost(camera, "error $error")
+        override fun onError(camera: CameraDevice, error: Int) = lost(this, camera, "error $error")
 
         override fun onClosed(camera: CameraDevice) {
-            if (closed && device == null) finish()
+            opens -= this
+            if (closed && opens.isEmpty()) finish()
         }
     }
 
-    /** The OS took the camera (another app, the app in the background, the camera service). */
-    private fun lost(camera: CameraDevice, why: String) {
+    /**
+     * The camera of [open] errored or was taken (another app, the app in the background, the camera
+     * service). While opening for a start() or an apply(), that open failed; else the track pauses
+     * until the camera is free again.
+     */
+    private fun lost(open: DeviceOpen, camera: CameraDevice, why: String) {
+        open.camera = camera
         camera.close()
-        if (device === camera || device == null) {
-            device = null
-            closeSession()
-        }
-        opening?.let {
-            opening = null
-            it.resumeWithException(RtcError.Failed("camera ${camera.id}: $why"))
-            return
-        }
-        if (closed) return
-        val now = android.os.SystemClock.elapsedRealtime()
+        if (closed || open !== current) return
+        device = null
+        current = null
+        closeSession()
+        if (opening != null) return openFailed(RtcError.Failed("camera ${camera.id}: $why"))
+        val now = SystemClock.elapsedRealtime()
         losses.removeAll { now - it > 30_000 }
         losses += now
         if (losses.size > 5) return ended("camera ${camera.id} keeps failing ($why)")
@@ -382,15 +488,28 @@ internal class CameraPipeline(private val engine: RtcEngine, private var options
 
     private val availability = object : CameraManager.AvailabilityCallback() {
         override fun onCameraAvailable(cameraId: String) {
-            if (!paused || closed || device != null || cameraId != spec.id) return
-            paused = false
-            Log.i("camera $cameraId is free again: reopening")
-            try {
-                openDevice()
-            } catch (e: RtcError) {
-                ended("the camera could not be reopened: ${e.message}")
-            }
+            free += cameraId
+            if (paused && !closed && current == null && cameraId == spec.id) reopen()
         }
+
+        override fun onCameraUnavailable(cameraId: String) {
+            free -= cameraId
+        }
+    }
+
+    private fun reopen() {
+        paused = false
+        Log.i("camera ${spec.id} is free again: reopening")
+        try {
+            openDevice()
+        } catch (e: RtcError) {
+            ended("the camera could not be reopened: ${e.message}")
+        }
+    }
+
+    /** What cannot go on: an open under way fails ([openFailed]); a running camera ends the track. */
+    private fun failed(reason: String) {
+        if (opening != null) openFailed(RtcError.Failed(reason)) else ended(reason)
     }
 
     private fun ended(reason: String) {
@@ -402,23 +521,24 @@ internal class CameraPipeline(private val engine: RtcEngine, private var options
 
     // ---- the encoder ----
 
-    /** false = no encoder (the track ended). */
-    private fun ensureEncoder(): Boolean {
-        if (encoder != null) return true
+    /** null = an encoder runs; else why none could be made. */
+    private fun ensureEncoder(): String? {
+        if (encoder != null) return null
         return try {
             encoder = VideoEncoder.open(encodeSize.width, encodeSize.height, spec.fps, bitrate, handler, encoderListener)
             parameterSets = null
-            true
+            null
         } catch (e: Exception) {
-            ended("no encoder: ${e.message}")
-            false
+            "no encoder: ${e.message}"
         }
     }
 
     private fun recreateEncoder(size: Size) {
         encodeSize = size
         encoder?.let { old -> encoder = null; retire { old.release() } }
-        if (device != null && ensureEncoder()) rebuildSession()
+        if (device == null) return
+        ensureEncoder()?.let { return failed(it) }
+        rebuildSession()
     }
 
     private val encoderListener = object : VideoEncoder.Listener {
@@ -434,7 +554,7 @@ internal class CameraPipeline(private val engine: RtcEngine, private var options
         override fun onError(encoder: VideoEncoder, error: Exception) {
             if (encoder !== this@CameraPipeline.encoder) return
             Log.w("encoder error", error)
-            if (++encoderFailures > 3) return ended("the encoder keeps failing: ${error.message}")
+            if (++encoderFailures > 3) return failed("the encoder keeps failing: ${error.message}")
             recreateEncoder(encodeSize)
         }
     }
@@ -524,8 +644,11 @@ internal class CameraPipeline(private val engine: RtcEngine, private var options
 
     // ---- the session ----
 
-    /** One createCaptureSession: what was retired while it ran is released when it closes. */
-    private inner class SessionAttempt(val outputs: List<Surface>) : CameraCaptureSession.StateCallback() {
+    /**
+     * One createCaptureSession, of the encoder and [showing] previews: what was retired while it ran
+     * is released when it closes.
+     */
+    private inner class SessionAttempt(val outputs: List<Surface>, val showing: Int) : CameraCaptureSession.StateCallback() {
         var session: CameraCaptureSession? = null
         private val retired = ArrayList<() -> Unit>()
         private var over = false
@@ -547,12 +670,15 @@ internal class CameraPipeline(private val engine: RtcEngine, private var options
             startRepeating(session)
             // A new session is a new start for whoever decodes: a keyframe with its parameter sets.
             encoder?.requestKeyframe()
+            running()
         }
 
         override fun onConfigureFailed(session: CameraCaptureSession) {
             Log.w("camera session not configured (${outputs.size} outputs)")
             done()
-            if (attempt === this) attempt = null
+            if (attempt !== this) return
+            attempt = null
+            if (!closed && device != null) refused(this)
         }
 
         override fun onClosed(session: CameraCaptureSession) = done()
@@ -569,7 +695,11 @@ internal class CameraPipeline(private val engine: RtcEngine, private var options
     /** Released once nothing draws into it any more: when the session in use now closes. */
     private fun retire(release: () -> Unit) {
         val current = attempt
-        if (current == null) runCatching(release) else current.retire(release)
+        when {
+            current != null -> current.retire(release)
+            closed && !finished -> atFinish += release // the camera is closing: once it closed
+            else -> runCatching(release)
+        }
     }
 
     private fun closeSession() {
@@ -583,29 +713,86 @@ internal class CameraPipeline(private val engine: RtcEngine, private var options
         if (previous.session == null) handler.postDelayed({ previous.done() }, 2000)
     }
 
+    /** The camera took no session with these outputs: fewer previews, then none, then the camera failed. */
+    private fun refused(a: SessionAttempt) {
+        when {
+            a.showing > 1 -> {
+                previewCap = 1
+                Log.w("camera ${spec.id}: no session with ${a.showing} views on its preview: the first shows it, the others stay black")
+            }
+            a.showing == 1 -> {
+                previewCap = 0
+                Log.w("camera ${spec.id}: no session with a preview (${spec.preview}) beside the encoder: the views stay black")
+            }
+            else -> return failed("camera ${spec.id}: no capture session for the encoder at $encodeSize")
+        }
+        rebuildSession()
+    }
+
+    /**
+     * The encoder and the preview. Several views share ONE preview stream (surface sharing: their
+     * SurfaceTextures have the same size, format and kind, the combination the platform guarantees;
+     * the camera's buffers are shared, not copied) — as many as [Spec.views] and the platform allow
+     * (OutputConfiguration.getMaxSharedSurfaceCount, 4 on current versions: addSurface refuses the
+     * one past it). The views after those, in the order they came, stay black (logged) until one
+     * before them lets go: a view that shows the camera never loses it to one that came later. A
+     * session the camera refuses is made again with one preview, then none ([refused]).
+     */
     private fun rebuildSession() {
         val dev = device ?: return
         val enc = encoder ?: return
         val previous = attempt
-        val outputs = ArrayList<Surface>(2)
-        outputs += enc.surface
-        preview?.let { p ->
-            p.texture.setDefaultBufferSize(spec.preview.width, spec.preview.height)
-            outputs += p.surface
+        val wanted = previews.take(min(previewCap, spec.views))
+        for (p in wanted) p.texture.setDefaultBufferSize(spec.preview.width, spec.preview.height)
+        var shown = wanted.take(1)
+        var shared: OutputConfiguration? = null
+        if (wanted.size > 1 && Build.VERSION.SDK_INT >= 26) {
+            try {
+                val config = OutputConfiguration(wanted[0].surface)
+                config.enableSurfaceSharing()
+                var n = 1
+                while (n < wanted.size) {
+                    try {
+                        config.addSurface(wanted[n].surface)
+                    } catch (e: IllegalArgumentException) {
+                        break // more than the platform shares
+                    }
+                    n++
+                }
+                if (n > 1) {
+                    shown = wanted.take(n)
+                    shared = config
+                }
+            } catch (e: IllegalArgumentException) {
+                Log.w("camera ${spec.id}: the views' surfaces are not shared", e)
+            }
         }
-        val next = SessionAttempt(outputs)
+        if (previews.size > shown.size) {
+            Log.w("camera ${spec.id}: ${previews.size} views, its preview in ${shown.size}: the others stay black")
+        }
+        val outputs = ArrayList<Surface>(1 + shown.size)
+        outputs += enc.surface
+        shown.forEach { outputs += it.surface }
+        val next = SessionAttempt(outputs, shown.size)
         attempt = next
         previous?.session?.let { s ->
             runCatching { s.stopRepeating() }
             runCatching { s.close() }
         }
         try {
-            @Suppress("DEPRECATION") // the List<Surface> form exists on every API level the library runs on
-            dev.createCaptureSession(outputs, next, handler)
+            if (shared != null && Build.VERSION.SDK_INT >= 26) {
+                @Suppress("DEPRECATION") // the Handler form (API 24), as the one below
+                dev.createCaptureSessionByOutputConfigurations(listOf(OutputConfiguration(enc.surface), shared), next, handler)
+            } else {
+                @Suppress("DEPRECATION") // the List<Surface> form exists on every API level the library runs on
+                dev.createCaptureSession(outputs, next, handler)
+            }
         } catch (e: Exception) {
             Log.w("camera session", e)
             attempt = null
             next.done()
+            // A disconnection says so through the device's callbacks, which come first; else it is a refusal.
+            handler.post { if (attempt == null && device === dev && !closed) refused(next) }
         }
     }
 
@@ -633,17 +820,27 @@ internal class CameraPipeline(private val engine: RtcEngine, private var options
             ?: ranges.maxByOrNull { it.upper }
     }
 
-    // ---- the preview (a local RtcVideoView) ----
+    // ---- the preview (local RtcVideoViews) ----
 
     private fun geometry() = PreviewGeometry(spec.preview.width, spec.preview.height, spec.sensorOrientation, spec.facing)
 
-    /** The view's texture becomes a second output of the session. The last view to attach wins. */
-    fun attachPreview(texture: SurfaceTexture, geometry: (PreviewGeometry) -> Unit) {
+    /**
+     * The view's texture shows the camera's preview, beside the views already there when the camera
+     * shares it ([rebuildSession]); past that, it stays black and the views before it keep theirs.
+     */
+    fun attachPreview(texture: SurfaceTexture, onGeometry: (PreviewGeometry) -> Unit) {
         handler.post {
             if (closed) return@post
-            preview?.let { old -> retire { old.surface.release() } }
-            preview = Preview(texture, Surface(texture), geometry)
-            geometry(geometry())
+            previews += Preview(texture, Surface(texture), onGeometry)
+            if (!this::spec.isInitialized) return@post
+            onGeometry(geometry())
+            val showing = attempt?.showing
+            if (previews.size > min(previewCap, spec.views) || (showing != null && showing < previews.size - 1)) {
+                // Past what the camera shares (views before it are black already): it stays black,
+                // and the session of the views that show the camera is left alone.
+                Log.w("camera ${spec.id}: ${previews.size} views, its preview in ${showing ?: 0}: the others stay black")
+                return@post
+            }
             rebuildSession()
         }
     }
@@ -651,17 +848,17 @@ internal class CameraPipeline(private val engine: RtcEngine, private var options
     /** The view lets go of its texture: released here once the camera no longer draws into it. */
     fun detachPreview(texture: SurfaceTexture) {
         val posted = handler.post {
-            val p = preview
-            if (p != null && p.texture === texture) {
-                preview = null
-                retire {
-                    p.surface.release()
-                    texture.release()
-                }
-                if (!closed) rebuildSession()
-            } else {
-                retire { texture.release() }
+            val p = previews.firstOrNull { it.texture === texture }
+                ?: return@post retire { texture.release() }
+            previews -= p
+            val release = {
+                p.surface.release()
+                texture.release()
             }
+            // Released when the last session that drew into it is over; a black view's at once.
+            val drawnBy = attempts.lastOrNull { p.surface in it.outputs } ?: return@post release()
+            drawnBy.retire(release)
+            if (drawnBy === attempt && !closed) rebuildSession()
         }
         if (!posted) texture.release() // the thread is gone: nothing draws into it
     }
@@ -688,5 +885,7 @@ internal class CameraPipeline(private val engine: RtcEngine, private var options
     private companion object {
         const val START_BITRATE = 1_000_000
         const val DEFAULT_MAX_BITRATE = 1_500_000
+        /** How long a closing pipeline waits for its cameras' onClosed before its thread ends anyway. */
+        const val CLOSE_TIMEOUT_MS = 5000L
     }
 }

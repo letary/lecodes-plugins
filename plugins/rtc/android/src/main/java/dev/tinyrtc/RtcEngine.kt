@@ -94,9 +94,10 @@ class RtcEngine private constructor(context: Context) {
     }
 
     /**
-     * Opens the camera (suspends until it is open) with its hardware encoder and the core's video
+     * Opens the camera (suspends until it runs) with its hardware encoder and the core's video
      * source. [RtcError.Denied] without the CAMERA permission, [RtcError.NotFound] when no camera
-     * matches.
+     * matches. Failed or cancelled at any point, it leaves nothing behind: no camera held, no thread,
+     * no core source.
      */
     suspend fun openCamera(options: CameraOptions = CameraOptions()): LocalVideoTrack {
         Core.checkMain("openCamera")

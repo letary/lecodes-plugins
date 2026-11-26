@@ -25,11 +25,11 @@ class RtcDataChannel internal constructor(
     /** The other side closed it (or the connection went). Not after [close]. */
     var onClose: (() -> Unit)? = null
 
-    /** onBufferedAmountLow fires when the queue drains to this many bytes. */
+    /** onBufferedAmountLow fires when the queue drains to this many bytes. [RtcError.Failed] for a negative one. */
     var bufferedAmountLowThreshold: Long = 0
         set(value) {
             Core.checkMain("bufferedAmountLowThreshold")
-            require(value >= 0)
+            if (value < 0) throw RtcError.Failed("bufferedAmountLowThreshold: $value bytes: it cannot be negative")
             field = value
             if (state != State.CLOSED) connection.tell { Native.channelSetBufferedLow(it, id, value) }
         }

@@ -8,15 +8,18 @@ enum class RtcConnectionState { NEW, CONNECTING, CONNECTED, DISCONNECTED, FAILED
 data class IceServer(val url: String, val username: String? = null, val credential: String? = null)
 
 data class RtcConfiguration(
-    /** "stun:host:port" | "turn:host:port?transport=udp|tcp" | "turns:host:port". */
+    /** "stun:host:port" (anything else is ignored: there is no TURN). */
     val iceServers: List<IceServer> = emptyList(),
-    /** Only through TURN (hides the addresses). */
+    /**
+     * Never reveal an address of this device: no candidate of its own is put into a description or
+     * raised as an event, so the only path is through a candidate the app adds (a relay's).
+     */
     val relayOnly: Boolean = false,
 )
 
 data class DataChannelOptions(
     val ordered: Boolean = true,
-    /** At most one of the two; both null = reliable. */
+    /** At most one of the two (both: [RtcError.Failed]); both null = reliable. */
     val maxRetransmits: Int? = null,
     val maxPacketLifeTimeMs: Int? = null,
 )
@@ -88,6 +91,12 @@ class RtcConnection internal constructor(private val engine: RtcEngine, config: 
     /** Own channels being opened: their id is not known until channelOpen returns. */
     private var opening = 0
     private val held = ArrayList<ChannelEvent>()
+    /**
+     * Channels this side closed, or gave up while opening (a cancelled createDataChannel), until the
+     * core says they are closed: what it still says of them is nobody's — and never a channel of the
+     * other side (the core's ids are not reused).
+     */
+    private val closedHere = HashSet<Int>()
 
     private class ChannelEvent(val type: Int, val id: Int, val b: Int, val bytes: ByteArray?)
 
@@ -144,11 +153,16 @@ class RtcConnection internal constructor(private val engine: RtcEngine, config: 
         }
     }
 
-    /** What this connection sends of [kind]: a track, or null for none. Never a renegotiation. */
+    /**
+     * What this connection sends of [kind]: a track, or null for none. Never a renegotiation.
+     * [RtcError.Failed] for a track of the other kind.
+     */
     fun setTrack(kind: MediaKind, track: LocalTrack?) {
         Core.checkMain("setTrack")
         if (isClosed) throw RtcError.Closed("setTrack: the connection is closed")
-        require(track == null || track.kind == kind) { "a ${track?.kind} track given as $kind" }
+        if (track != null && track.kind != kind) {
+            throw RtcError.Failed("setTrack: a ${track.kind.name.lowercase()} track given as ${kind.name.lowercase()}")
+        }
         if (track != null && track.isStopped) throw RtcError.Closed("setTrack: the track is stopped")
         when (kind) {
             MediaKind.AUDIO -> audioTrack = track as LocalAudioTrack?
@@ -157,19 +171,32 @@ class RtcConnection internal constructor(private val engine: RtcEngine, config: 
         engine.tracksChanged()
     }
 
+    /**
+     * A channel of ours, opened in-band: usable once [RtcDataChannel.onOpen] fired.
+     * [RtcError.Failed] when both maxRetransmits and maxPacketLifeTimeMs are given. A cancelled
+     * caller leaves no channel behind: one the core opened meanwhile is closed again.
+     */
     suspend fun createDataChannel(label: String, options: DataChannelOptions = DataChannelOptions()): RtcDataChannel {
-        require(options.maxRetransmits == null || options.maxPacketLifeTimeMs == null) {
-            "at most one of maxRetransmits and maxPacketLifeTimeMs"
+        Core.checkMain("createDataChannel")
+        if (options.maxRetransmits != null && options.maxPacketLifeTimeMs != null) {
+            throw RtcError.Failed("createDataChannel: at most one of maxRetransmits and maxPacketLifeTimeMs")
         }
+        if (isClosed) throw RtcError.Closed("createDataChannel: the connection is closed")
         opening++
         try {
-            val id = call("createDataChannel") { h ->
+            val id = madeOn(Core.lane, make = {
+                val h = liveHandle("createDataChannel")
                 val result = Native.channelOpen(
                     h, label.utf8(), !options.ordered, options.maxRetransmits ?: -1, options.maxPacketLifeTimeMs ?: -1,
                 )
                 if (result < 0) throw errorOf(result.toInt(), "createDataChannel")
                 result.toInt()
-            }
+            }, undo = { id ->
+                // Nobody waits for it any more (main, before the held events are replayed).
+                closedHere += id
+                tell { Native.channelClose(it, id) }
+            })
+            // Closed meanwhile: the core's connection, and the channel with it, are gone.
             if (isClosed) throw RtcError.Closed("createDataChannel: the connection is closed")
             return RtcDataChannel(this, id, label, open = false).also { channels[id] = it }
         } finally {
@@ -213,6 +240,7 @@ class RtcConnection internal constructor(private val engine: RtcEngine, config: 
         for (channel in channels.values) channel.connectionClosed()
         channels.clear()
         held.clear()
+        closedHere.clear()
         audioTrack = null
         videoTrack = null
         toldAudio = false
@@ -239,18 +267,25 @@ class RtcConnection internal constructor(private val engine: RtcEngine, config: 
         if (h != 0L) Native.connectionDestroy(h)
     }
 
-    /** A SYNC call of the core, on the lane. */
+    /**
+     * A SYNC call of the core, on the lane. A cancelled caller stops waiting; what the call did in
+     * the core (an offer made, an answer taken) stays done — the calls that make something to
+     * undo use [madeOn] instead.
+     */
     internal suspend fun <T> call(what: String, block: (Long) -> T): T {
         Core.checkMain(what)
         if (isClosed) throw RtcError.Closed("$what: the connection is closed")
-        return withContext(Core.lane) {
-            val h = handle
-            if (h == 0L) {
-                throw if (createFailed) RtcError.Failed("$what: the connection could not be created")
-                else RtcError.Closed("$what: the connection is closed")
-            }
-            block(h)
+        return withContext(Core.lane) { block(liveHandle(what)) }
+    }
+
+    /** The lane: the core's connection, or why there is none. */
+    private fun liveHandle(what: String): Long {
+        val h = handle
+        if (h == 0L) {
+            throw if (createFailed) RtcError.Failed("$what: the connection could not be created")
+            else RtcError.Closed("$what: the connection is closed")
         }
+        return h
     }
 
     /** A call that does not wait, in order with every other, on the lane. Any thread. */
@@ -323,6 +358,10 @@ class RtcConnection internal constructor(private val engine: RtcEngine, config: 
     }
 
     private fun deliver(event: ChannelEvent) {
+        if (event.id in closedHere) {
+            if (event.type == Native.EVENT_CHANNEL_CLOSED) closedHere -= event.id
+            return
+        }
         val channel = channels[event.id]
         when (event.type) {
             Native.EVENT_CHANNEL_OPEN -> {
@@ -345,6 +384,7 @@ class RtcConnection internal constructor(private val engine: RtcEngine, config: 
 
     internal fun channelClosedLocally(id: Int) {
         channels.remove(id)
+        closedHere += id
     }
 
     private fun stateOf(value: Int) = RtcConnectionState.entries.getOrElse(value) { RtcConnectionState.FAILED }

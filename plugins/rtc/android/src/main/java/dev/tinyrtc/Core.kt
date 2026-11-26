@@ -6,9 +6,12 @@ import java.lang.ref.WeakReference
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicInteger
+import kotlin.coroutines.CoroutineContext
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.asCoroutineDispatcher
+import kotlinx.coroutines.withContext
 
 /**
  * The threads of the half.
@@ -17,7 +20,8 @@ import kotlinx.coroutines.asCoroutineDispatcher
  * - [lane]: ONE thread that makes every call into the core that takes a handle and is not on a hot
  *   path — creating and destroying handles, the SYNC calls (offer, stats, ...), what a connection
  *   sends. One thread, in order: no handle is ever destroyed while another call is using it, and a
- *   `suspend` call of the API is `withContext(lane)`. The hot paths stay on their own threads:
+ *   `suspend` call of the API is `withContext(lane)` — [madeOn] when it makes something, so that a
+ *   cancelled caller leaves nothing behind. The hot paths stay on their own threads:
  *   audio push / pull (the context lives as long as the process), a source's frames (the encoder
  *   thread, under the source's lock), see CameraPipeline.
  */
@@ -78,6 +82,26 @@ internal fun errorOf(status: Int, what: String): RtcError = when (status) {
 internal fun checkStatus(status: Int, what: String) {
     if (status != STATUS_OK) throw errorOf(status, what)
 }
+
+/**
+ * [make] on [lane] (a handle, a channel: something that must be undone), never lost to a cancelled
+ * caller. withContext's prompt cancellation throws even when its block has run, which would drop
+ * what the block made: here, once [make] has run, its result is either returned or given to [undo]
+ * (on the caller's thread, before the CancellationException goes on). A caller cancelled before
+ * [make] started makes nothing. Plain coroutines, no Android class: MadeOnTest runs it on the JVM.
+ */
+internal suspend fun <T> madeOn(lane: CoroutineContext, make: () -> T, undo: (T) -> Unit): T {
+    // Written on the lane, read here once withContext is over (its completion orders the two).
+    var made: Made<T>? = null
+    try {
+        return withContext(lane) { make().also { made = Made(it) } }
+    } catch (e: CancellationException) {
+        made?.let { undo(it.value) }
+        throw e
+    }
+}
+
+private class Made<T>(val value: T)
 
 internal fun String.utf8(): ByteArray = toByteArray(Charsets.UTF_8)
 internal fun ByteArray.utf8(): String = toString(Charsets.UTF_8)

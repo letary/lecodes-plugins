@@ -5,7 +5,10 @@ import java.lang.ref.WeakReference
 /**
  * The camera: its session, its hardware encoder and the core's video source. One stream, encoded
  * once for every connection that sends it; the core steers the encoder (bitrate, rate, size, an
- * IDR when a receiver lost the picture). An [RtcVideoView] showing it shows the camera's preview.
+ * IDR when a receiver lost the picture). An [RtcVideoView] showing it shows the camera's preview —
+ * several views at once where the camera shares its preview stream (Android 8+, a camera above
+ * LEGACY: as many views as the platform shares a stream with, 4 on current versions); a view past
+ * that stays black (logged) and the views before it keep the picture.
  */
 class LocalVideoTrack internal constructor(private val engine: RtcEngine, internal val pipe: CameraPipeline) :
     LocalTrack, VideoTrack {
@@ -21,12 +24,14 @@ class LocalVideoTrack internal constructor(private val engine: RtcEngine, intern
     /**
      * Sets [maxBitrate]. The size and the rate under it keep following the network by themselves;
      * every connection that sends this track is under the same ceiling (it is encoded once).
+     * [RtcError.Failed] for a value <= 0. Returns once the core has it; a cancelled caller stops
+     * waiting, the ceiling is applied all the same.
      */
     suspend fun setMaxBitrate(bitsPerSecond: Int) {
         Core.checkMain("setMaxBitrate")
-        require(bitsPerSecond > 0) { "maxBitrate must be positive" }
+        if (bitsPerSecond <= 0) throw RtcError.Failed("setMaxBitrate: $bitsPerSecond bit/s: the ceiling must be positive")
         pipe.maxBitrate = bitsPerSecond
-        pipe.applyLimits()
+        pipe.pushLimits().join()
     }
 
     /** false = no connection sends it (the other side sees remoteMedia inactive); the camera keeps running. */
@@ -53,7 +58,15 @@ class LocalVideoTrack internal constructor(private val engine: RtcEngine, intern
         pipe.onEnded = { reason -> self.get()?.endedByOs(reason) }
     }
 
-    /** Another camera, size or rate. The track (and what every connection sends) stays. */
+    /**
+     * Another camera, size or rate. The track (and what every connection sends) stays; returns once
+     * the camera runs with [options]. No such camera: [RtcError.NotFound], nothing changed. When the
+     * camera fails (it does not open, it errors, it takes no session), the track goes back to the
+     * camera and format it had and this throws ([RtcError.Failed], or [RtcError.NotFound] /
+     * [RtcError.Denied] when that is the cause); when even that camera does not come back, the track
+     * ends ([onEnded]) and this throws. A cancelled caller stops waiting; the switch (or the way
+     * back) goes on without it.
+     */
     suspend fun apply(options: CameraOptions) {
         Core.checkMain("apply")
         if (isStopped) throw RtcError.Closed("apply: the track is stopped")

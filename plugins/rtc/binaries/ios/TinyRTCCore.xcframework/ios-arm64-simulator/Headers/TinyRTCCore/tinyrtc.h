@@ -1,6 +1,6 @@
 // tinyrtc.h — the C face of the core. DRAFT: a proposal, nothing behind it yet but the spike.
 //
-// The core is the half of a call that is the same on every platform: ICE (with its own STUN / TURN
+// The core is the half of a call that is the same on every platform: ICE (with its own STUN
 // client), DTLS, SRTP, RTP / RTCP, retransmission, bandwidth estimation, the data channels, the SDP
 // of one fixed profile, Opus and the audio jitter buffer. The platform half (apple/, android/) is
 // what the OS owns: the camera, the hardware H.264 codec, the audio unit with its echo canceller,
@@ -217,8 +217,8 @@ typedef struct {
 } tinyrtc_event;
 
 typedef struct {
-  const char *url;        // "stun:host:port" | "turn:host:port?transport=udp|tcp" | "turns:host:port"
-  const char *username;   // TURN; NULL for STUN
+  const char *url;        // "stun:host:port" (anything else is ignored: there is no TURN)
+  const char *username;   // not used; NULL
   const char *credential;
 } tinyrtc_ice_server;
 
@@ -275,7 +275,7 @@ tinyrtc_status tinyrtc_channel_close(tinyrtc_connection *connection, uint32_t id
 // -- numbers. One fixed struct, not a report: what a call screen and a bug report need.
 typedef struct {
   tinyrtc_state state;
-  uint8_t relayed;                 // 1 = the path goes through TURN
+  uint8_t relayed;                 // not reported yet: always 0
   uint32_t rtt_ms;
   uint32_t send_estimate_bps;      // what the network is believed to carry
   uint32_t audio_send_bps, audio_recv_bps;
