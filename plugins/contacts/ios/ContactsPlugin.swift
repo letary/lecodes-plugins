@@ -4,9 +4,9 @@
 //  The "contacts" service. A plugin and not part of the SDK so that only the apps that install it
 //  link the Contacts framework (Apple reads its API off the binary and demands
 //  NSContactsUsageDescription at upload, run or not); the manifest merges the usage string. For the
-//  same reason it brings the `contacts` PERMISSION to the host: the core knows the kind, this plugin
-//  registers who asks for it — the generated glue (`@permission contacts`) and the SDK's
-//  `permissions` both go through it.
+//  same reason it brings the `contacts` PERMISSION to the host: the manifest declares the kind, this
+//  plugin hands the host who asks for it (the generated `register` takes the asker) — the generated
+//  glue (`@permission contacts`) and the SDK's `permissions` both go through it.
 //
 //  An App Clip does not carry this plugin: Contacts and ContactsUI are not available to a clip.
 //
@@ -20,15 +20,15 @@ public enum LeCodesContactsPlugin {
     public static let pluginId = "contacts"
 
     public static func register(in engine: LeCodesEngine) {
-        engine.permissions.register(.contacts, PermissionAsker(
+        let asker = PermissionAsker(
             query: { ContactsAuthorization.state },
             // The store answers on a queue of its own; the status after the dialog is the answer
             // (it tells a limited grant from a full one, the completion's flag does not).
             request: { then in
                 CNContactStore().requestAccess(for: .contacts) { _, _ in then(ContactsAuthorization.state) }
             }
-        ))
-        ContactsChannel.register(in: engine) { _, events in ContactsService(events) }
+        )
+        ContactsChannel.register(in: engine, contacts: asker) { _, events in ContactsService(events) }
     }
 }
 

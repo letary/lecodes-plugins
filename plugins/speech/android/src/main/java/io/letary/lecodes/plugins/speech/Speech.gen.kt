@@ -171,6 +171,7 @@ object SpeechChannel {
     /** Register the service: `make` builds one session from its params. It must be cheap — no
      *  prompt, no I/O: that belongs to the first call that needs it. */
     fun register(engine: LecodesEngine, make: (params: SpeechParams, events: SpeechEvents) -> SpeechPlugin) {
+        engine.permissions.declare("speech", arrayOf("android.permission.RECORD_AUDIO"))
         engine.registerService(NAME, VERSION) { params, channel ->
             val plugin = make(SpeechParams.read(Wire.reader(params)) ?: SpeechParams(), SpeechEvents { event, packed -> channel.emitPacked(event, packed) })
             Services.Instance(onCall = { call -> SpeechGlue.call(plugin, engine.permissions, call.method, call.reader(), call) }, onClose = { plugin.close() })
@@ -186,7 +187,7 @@ internal object SpeechGlue {
             "start" -> {
                 val a0 = if (0 < n && !r.isNull()) (SpeechOptions.read(r) ?: return settle.reject("bad arguments — Speech.start: options")) else { if (0 < n) r.skip(); null }
                 val reply = Reply<Unit, SpeechCode>(settle, null)
-                permissions.ensure(listOf(Permissions.Kind.SPEECH, Permissions.Kind.MICROPHONE)) { granted ->
+                permissions.ensure(listOf(Permissions.Kind.of("speech"), Permissions.Kind.MICROPHONE)) { granted ->
                     if (!granted) reply.reject(SpeechCode.DENIED)
                     else plugin.start(a0, reply)
                 }

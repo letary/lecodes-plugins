@@ -4,6 +4,21 @@
   "version": "2.0.0",
   "sdk": "^2.0.0",
   "description": "The device position: one fix, or a watch (CoreLocation, LocationManager, navigator.geolocation). The app's side is Geolocation.",
+  "permissions": {
+    "location": {
+      "infoPlist": [
+        "NSLocationWhenInUseUsageDescription"
+      ],
+      "android": [
+        "android.permission.ACCESS_FINE_LOCATION",
+        "android.permission.ACCESS_COARSE_LOCATION"
+      ],
+      "androidAnyOf": true,
+      "androidFeatures": [
+        "android.hardware.location"
+      ]
+    }
+  },
   "ios": {
     "module": "LeCodesGeolocation",
     "register": "LeCodesGeolocationPlugin",

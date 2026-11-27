@@ -171,7 +171,10 @@ public enum SpeechChannel {
 
     /// Register the service: `make` builds one session from its params. It must be cheap — no prompt,
     /// no I/O: that belongs to the first call that needs it.
-    public static func register(in engine: LeCodesEngine, _ make: @escaping (SpeechParams, SpeechEvents) -> SpeechPlugin) {
+    /// speech: who asks the OS for the permission the plugin brings ("speech") —
+    /// the state now, and a request that completes once with the state after the dialog.
+    public static func register(in engine: LeCodesEngine, speech: PermissionAsker, _ make: @escaping (SpeechParams, SpeechEvents) -> SpeechPlugin) {
+        engine.permissions.register("speech", speech)
         engine.registerService(name, version: Int32(version)) { params, channel in
             SpeechGlue(make(WireIn.of(params, { SpeechParams(wire: $0) }) ?? SpeechParams(), SpeechEvents(channel: channel)), engine.permissions)
         }
@@ -199,7 +202,7 @@ final class SpeechGlue: WireServiceInstance {
                 a0 = v
             }
             let reply = Reply<Void, SpeechCode>(settle)
-            permissions.ensure([.speech, .microphone]) { [plugin] granted in
+            permissions.ensure(["speech", .microphone]) { [plugin] granted in
                 guard granted else { return reply.reject(.denied) }
                 plugin.start(a0, reply)
             }

@@ -4,6 +4,19 @@
   "version": "2.0.0",
   "sdk": "^2.0.0",
   "description": "Speech recognition: the microphone to text, live (SFSpeechRecognizer, android.speech.SpeechRecognizer, the browser's SpeechRecognition). The app's side is SpeechRecognizer.",
+  "permissions": {
+    "speech": {
+      "infoPlist": [
+        "NSSpeechRecognitionUsageDescription"
+      ],
+      "android": [
+        "android.permission.RECORD_AUDIO"
+      ],
+      "androidFeatures": [
+        "android.hardware.microphone"
+      ]
+    }
+  },
   "ios": {
     "module": "LeCodesSpeech",
     "register": "LeCodesSpeechPlugin",

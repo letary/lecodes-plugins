@@ -79,7 +79,7 @@ class ContactsService(
     // ── access ───────────────────────────────────────────────────────────────
 
     override fun access(reply: Reply<ContactsAccess, ContactsCode>) {
-        reply.resolve(when (engine.permissions.query(Permissions.Kind.CONTACTS)) {
+        reply.resolve(when (engine.permissions.query(Permissions.Kind.of("contacts"))) {
             Permissions.State.GRANTED -> ContactsAccess.GRANTED
             Permissions.State.DENIED -> ContactsAccess.DENIED
             Permissions.State.PROMPT -> ContactsAccess.PROMPT

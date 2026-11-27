@@ -648,7 +648,10 @@ public enum ContactsChannel {
 
     /// Register the service: `make` builds one session from its params. It must be cheap — no prompt,
     /// no I/O: that belongs to the first call that needs it.
-    public static func register(in engine: LeCodesEngine, _ make: @escaping (ContactsParams, ContactsEvents) -> ContactsPlugin) {
+    /// contacts: who asks the OS for the permission the plugin brings ("contacts") —
+    /// the state now, and a request that completes once with the state after the dialog.
+    public static func register(in engine: LeCodesEngine, contacts: PermissionAsker, _ make: @escaping (ContactsParams, ContactsEvents) -> ContactsPlugin) {
+        engine.permissions.register("contacts", contacts)
         engine.registerService(name, version: Int32(version)) { params, channel in
             let events = ContactsEvents(channel: channel)
             return ContactsGlue(make(WireIn.of(params, { ContactsParams(wire: $0) }) ?? ContactsParams(), events), engine.permissions, events.observed)
@@ -700,7 +703,7 @@ final class ContactsGlue: WireServiceInstance {
                 for v1 in v { v1.write(to: w) }
                 w.end()
             }
-            permissions.ensure([.contacts]) { [plugin] granted in
+            permissions.ensure(["contacts"]) { [plugin] granted in
                 guard granted else { return reply.reject(.denied) }
                 plugin.list(a0, reply)
             }
@@ -713,7 +716,7 @@ final class ContactsGlue: WireServiceInstance {
                 a1 = v
             }
             let reply = Reply<Contact?, ContactsCode>(settle) { v, w in if let v1 = v { v1.write(to: w) } }
-            permissions.ensure([.contacts]) { [plugin] granted in
+            permissions.ensure(["contacts"]) { [plugin] granted in
                 guard granted else { return reply.reject(.denied) }
                 plugin.get(a0, a1, reply)
             }
@@ -726,7 +729,7 @@ final class ContactsGlue: WireServiceInstance {
                 a1 = v
             }
             let reply = Reply<PluginFile?, ContactsCode>(settle) { v, w in if let v1 = v { v1.write(to: w) } }
-            permissions.ensure([.contacts]) { [plugin] granted in
+            permissions.ensure(["contacts"]) { [plugin] granted in
                 guard granted else { return reply.reject(.denied) }
                 plugin.photo(a0, a1, reply)
             }
@@ -736,7 +739,7 @@ final class ContactsGlue: WireServiceInstance {
         case "show":
             guard let a0 = args[0].string else { return settle.reject("bad arguments — Contacts.show: id") }
             let reply = Reply<Void, ContactsCode>(settle)
-            permissions.ensure([.contacts]) { [plugin] granted in
+            permissions.ensure(["contacts"]) { [plugin] granted in
                 guard granted else { return reply.reject(.denied) }
                 plugin.show(a0, reply)
             }

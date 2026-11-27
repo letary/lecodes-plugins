@@ -1,0 +1,31 @@
+{
+  "id": "calendar",
+  "name": "Calendar",
+  "version": "2.0.0",
+  "sdk": "^2.0.0",
+  "description": "The device's calendars: reading calendars and events behind the calendar permission, adding and editing an event through the system's own editor (EventKit / EventKitUI, CalendarContract). No write permission. No web half. The app's side is Calendar.",
+  "permissions": {
+    "calendar": {
+      "infoPlist": [
+        "NSCalendarsFullAccessUsageDescription",
+        "NSCalendarsUsageDescription"
+      ],
+      "android": [
+        "android.permission.READ_CALENDAR"
+      ]
+    }
+  },
+  "ios": {
+    "module": "LeCodesCalendar",
+    "register": "LeCodesCalendarPlugin",
+    "infoPlist": {
+      "NSCalendarsFullAccessUsageDescription": "The app reads your calendar to show your events in the app.",
+      "NSCalendarsUsageDescription": "The app reads your calendar to show your events in the app."
+    }
+  },
+  "android": {
+    "module": "lecodes-calendar",
+    "register": "io.letary.lecodes.plugins.calendar.LeCodesCalendarPlugin"
+  },
+  "web": null
+}

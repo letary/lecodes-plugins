@@ -50,12 +50,17 @@ public final class ContactsService: ContactsPlugin {
     }
 
     public func manageAccess(_ reply: Reply<Void, ContactsCode>) {
-        onMain {
+        onMain { [self] in
             guard #available(iOS 18.0, *), ContactsAuthorization.access == .limited else { return reply.resolve(()) }
             guard self.screen == nil else { return reply.reject(.busy) }
             let screen = Screen { reply.resolve(()) }
             let host = UIHostingController(rootView: AccessPickerHost { [weak self] in
-                self?.finish(screen, animated: false) { reply.resolve(()) }
+                // The store posts no change when the person changes the app's contacts here (seen
+                // on iOS 18.6): the sheet closing is that change — a listening app lists again.
+                self?.finish(screen, animated: false) {
+                    self?.announceChange()
+                    reply.resolve(())
+                }
             })
             host.view.backgroundColor = .clear
             host.modalPresentationStyle = .overFullScreen
@@ -119,7 +124,7 @@ public final class ContactsService: ContactsPlugin {
     public func pick(_ options: ContactPickOptions?, _ reply: Reply<[Contact], ContactsCode>) {
         let fields = Set(options?.fields ?? [])
         let multiple = options?.multiple == true
-        onMain {
+        onMain { [self] in
             guard self.screen == nil else { return reply.reject(.busy) }
             let screen = Screen { reply.resolve([]) }
             // The picker closes itself once the person chose or cancelled.
@@ -138,7 +143,7 @@ public final class ContactsService: ContactsPlugin {
     // MARK: - The system's editor and card
 
     public func add(_ draft: ContactDraft, _ reply: Reply<Bool, ContactsCode>) {
-        onMain {
+        onMain { [self] in
             guard self.screen == nil else { return reply.reject(.busy) }
             let screen = Screen { reply.resolve(false) }
             let editor = CNContactViewController(forNewContact: Self.newContact(draft))
@@ -155,7 +160,7 @@ public final class ContactsService: ContactsPlugin {
     }
 
     public func show(_ id: String, _ reply: Reply<Void, ContactsCode>) {
-        onMain {
+        onMain { [self] in
             guard self.screen == nil else { return reply.reject(.busy) }
             let contact: CNContact
             do {
@@ -223,19 +228,24 @@ public final class ContactsService: ContactsPlugin {
     // MARK: - The changed event
 
     public func changedObserved(_ observed: Bool) {
-        onMain {
+        onMain { [self] in
             if !observed { return self.stopObserving() }
             guard self.changeObserver == nil else { return }
             self.changeObserver = NotificationCenter.default.addObserver(forName: .CNContactStoreDidChange, object: nil, queue: .main) { [weak self] _ in
-                // One edit posts more than once: one `changed` once they settle.
-                guard let self, !self.changePending else { return }
-                self.changePending = true
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
-                    guard let self, self.changePending else { return }
-                    self.changePending = false
-                    self.events.changed()
-                }
+                self?.announceChange()
             }
+        }
+    }
+
+    /// One `changed` once a burst settles — one edit posts more than once (main thread); nothing
+    /// while the app does not listen.
+    private func announceChange() {
+        guard changeObserver != nil, !changePending else { return }
+        changePending = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
+            guard let self, self.changePending else { return }
+            self.changePending = false
+            self.events.changed()
         }
     }
 

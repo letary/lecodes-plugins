@@ -24,6 +24,7 @@ let package = Package(
         .library(name: "LeCodesBackgroundAudio", targets: ["LeCodesBackgroundAudio"]),
         .library(name: "LeCodesBiometrics", targets: ["LeCodesBiometrics"]),
         .library(name: "LeCodesBrowser", targets: ["LeCodesBrowser"]),
+        .library(name: "LeCodesCalendar", targets: ["LeCodesCalendar"]),
         .library(name: "LeCodesCamera", targets: ["LeCodesCamera"]),
         .library(name: "LeCodesContacts", targets: ["LeCodesContacts"]),
         .library(name: "LeCodesGeolocation", targets: ["LeCodesGeolocation"]),
@@ -77,6 +78,12 @@ let package = Package(
             name: "LeCodesBrowser",
             dependencies: [.product(name: "LeCodes", package: "lecodes")],
             path: "plugins/browser/ios"
+        ),
+        // calendar
+        .target(
+            name: "LeCodesCalendar",
+            dependencies: [.product(name: "LeCodes", package: "lecodes")],
+            path: "plugins/calendar/ios"
         ),
         // camera
         .target(

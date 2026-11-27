@@ -550,6 +550,7 @@ object ContactsChannel {
     /** Register the service: `make` builds one session from its params. It must be cheap — no
      *  prompt, no I/O: that belongs to the first call that needs it. */
     fun register(engine: LecodesEngine, make: (params: ContactsParams, events: ContactsEvents) -> ContactsPlugin) {
+        engine.permissions.declare("contacts", arrayOf("android.permission.READ_CONTACTS"))
         engine.registerService(NAME, VERSION) { params, channel ->
             val events = ContactsEvents { event, packed -> channel.emitPacked(event, packed) }
             val plugin = make(ContactsParams.read(Wire.reader(params)) ?: ContactsParams(), events)
@@ -584,7 +585,7 @@ internal object ContactsGlue {
                     for (v1 in v) { v1.write(w) }
                     w.end()
                 }
-                permissions.ensure(listOf(Permissions.Kind.CONTACTS)) { granted ->
+                permissions.ensure(listOf(Permissions.Kind.of("contacts"))) { granted ->
                     if (!granted) reply.reject(ContactsCode.DENIED)
                     else plugin.list(a0, reply)
                 }
@@ -593,7 +594,7 @@ internal object ContactsGlue {
                 val a0 = (if (0 < n) r.string() else null) ?: return settle.reject("bad arguments — Contacts.get: id")
                 val a1 = if (1 < n && !r.isNull()) (r.list { ContactField.read(r) } ?: return settle.reject("bad arguments — Contacts.get: fields")) else { if (1 < n) r.skip(); null }
                 val reply = Reply<Contact?, ContactsCode>(settle) { v, w -> if (v != null) { v.write(w) } }
-                permissions.ensure(listOf(Permissions.Kind.CONTACTS)) { granted ->
+                permissions.ensure(listOf(Permissions.Kind.of("contacts"))) { granted ->
                     if (!granted) reply.reject(ContactsCode.DENIED)
                     else plugin.get(a0, a1, reply)
                 }
@@ -602,7 +603,7 @@ internal object ContactsGlue {
                 val a0 = (if (0 < n) r.string() else null) ?: return settle.reject("bad arguments — Contacts.photo: id")
                 val a1 = if (1 < n && !r.isNull()) (ContactPhotoSize.read(r) ?: return settle.reject("bad arguments — Contacts.photo: size")) else { if (1 < n) r.skip(); null }
                 val reply = Reply<PluginFile?, ContactsCode>(settle) { v, w -> if (v != null) { v.write(w) } }
-                permissions.ensure(listOf(Permissions.Kind.CONTACTS)) { granted ->
+                permissions.ensure(listOf(Permissions.Kind.of("contacts"))) { granted ->
                     if (!granted) reply.reject(ContactsCode.DENIED)
                     else plugin.photo(a0, a1, reply)
                 }
@@ -614,7 +615,7 @@ internal object ContactsGlue {
             "show" -> {
                 val a0 = (if (0 < n) r.string() else null) ?: return settle.reject("bad arguments — Contacts.show: id")
                 val reply = Reply<Unit, ContactsCode>(settle, null)
-                permissions.ensure(listOf(Permissions.Kind.CONTACTS)) { granted ->
+                permissions.ensure(listOf(Permissions.Kind.of("contacts"))) { granted ->
                     if (!granted) reply.reject(ContactsCode.DENIED)
                     else plugin.show(a0, reply)
                 }

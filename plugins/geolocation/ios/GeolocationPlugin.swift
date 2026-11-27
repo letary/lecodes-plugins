@@ -4,8 +4,9 @@
 //  The "geolocation" service. A plugin and not part of the SDK so that only the apps that install
 //  it link CoreLocation (Apple flags location usage from the mere presence of CLLocationManager
 //  symbols); the manifest merges the Info.plist usage string. For the same reason it brings the
-//  `location` PERMISSION to the host: the core knows the kind, this plugin registers who asks for
-//  it — the generated glue (`@permission location`) and the SDK's `permissions` both go through it.
+//  `location` PERMISSION to the host: the manifest declares the kind, this plugin hands the host
+//  who asks for it (the generated `register` takes the asker) — the generated glue
+//  (`@permission location`) and the SDK's `permissions` both go through it.
 //
 
 import CoreLocation
@@ -18,11 +19,11 @@ public enum LeCodesGeolocationPlugin {
 
     public static func register(in engine: LeCodesEngine) {
         let location = LocationAsker()
-        engine.permissions.register(.location, PermissionAsker(
+        let asker = PermissionAsker(
             query: { location.state },
             request: { then in location.request(then) }
-        ))
-        GeolocationChannel.register(in: engine) { _, events in GeolocationService(events) }
+        )
+        GeolocationChannel.register(in: engine, location: asker) { _, events in GeolocationService(events) }
     }
 }
 

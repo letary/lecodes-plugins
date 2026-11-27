@@ -86,8 +86,10 @@ export interface CameraView extends View<"camera", CameraParams, CameraEvents> {
 - `@rejects` lists the codes a call can fail with. `@since <n>` marks a method added in version
   `n` of the contract: a half registers with the version it was generated from, and an app asks
   `supports("<method>")` before it calls one a host's half may be too old for.
-- `@permission <kind…>` (`camera`, `microphone`, `location`, `speech`, `contacts`) names the OS permissions a
-  call needs. The generated native glue asks the host's one permission service before the call and
+- `@permission <kind…>` names the OS permissions a call needs. A kind is the host's (`camera`,
+  `microphone`) or one the plugin BRINGS in its manifest (`permissions`, below: `location`,
+  `speech`, `contacts`, `calendar`, a third party's `acme.bluetooth`) — nothing outside the plugin
+  lists the kinds. The generated native glue asks the host's one permission service before the call and
   rejects with `denied` when one was refused — the half never sees a dialog (the web half asks
   nothing: the browser's API prompts itself). `lecodes plugin gen` holds the manifests to it: the
   usage string in `ios.infoPlist`, the `<uses-permission>` in the Android manifest. A call whose
@@ -151,6 +153,16 @@ export interface CameraView extends View<"camera", CameraParams, CameraEvents> {
 ```
 
 - A platform is ALWAYS a key: an object where the plugin has a half, `null` where it has none.
+- `permissions`: the OS permission kinds the plugin brings, by name —
+  `"calendar": { "infoPlist": ["NSCalendarsFullAccessUsageDescription"], "android": ["android.permission.READ_CALENDAR"] }`,
+  with `"androidAnyOf": true` where one of the Android names granted is the kind granted
+  (location) and `"androidFeatures": […]` for the hardware features those names imply (each must
+  be declared `android:required="false"`). The generator holds the plugin's own manifests to the
+  declaration; the Kotlin glue hands the names to the host (`engine.permissions.declare`), the
+  Swift `register` of a channel takes an asker per kind its methods tag
+  (`XChannel.register(in: engine, calendar: PermissionAsker(…)) { … }` — a kind only ever asked by
+  hand is registered by hand: `engine.permissions.register("x", asker)`). The host's own kinds
+  (`camera`, `microphone`, `notifications`) are never declared.
 - `register` is the hand-written type a host calls: `static func register(in:)` on iOS,
   `fun register(engine, context)` on Android, the module that exports `register(host)` on the web.
 - iOS: `infoPlist` (usage strings), `entitlements`, `packages`, `binaries` — prebuilt
@@ -182,6 +194,7 @@ export interface CameraView extends View<"camera", CameraParams, CameraEvents> {
 | `apple-sign-in` | service | `appleSignIn` | no: iOS only, the system's sheet |
 | `biometrics` | service | `biometrics` | no: a browser has no owner's confirmation (WebAuthn is a sign-in) |
 | `health` | service | `health` | no: a browser has no health store |
+| `calendar` | service | `calendar` | no: a browser has no calendar a page may read or write |
 | `contacts` | service | `contacts` | yes, where the browser has the Contact Picker (Chrome on Android): `pick()` only — a browser has no address book to read |
 | `torch` | service | `torch` | no: a browser lets no page light the torch (a camera stream's `torch` constraint is the camera's, on a few Android browsers) |
 | `browser` | service + view | `browser`, `webView` | yes: a popup, an iframe (own-origin pages) |

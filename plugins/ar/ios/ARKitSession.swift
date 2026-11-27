@@ -520,7 +520,7 @@ final class ARKitSession: NSObject, ARPlugin, ARSessionDelegate {
     /// (`permissions.request('location')`) before the start; without it the kind has no asker.
     private func alignment(_ alignment: WorldAlignment) -> ARConfiguration.WorldAlignment {
         guard alignment == .gravityAndHeading else { return .gravity }
-        guard permissions.query(.location) == .granted else {
+        guard permissions.query("location") == .granted else {
             print("[ar] worldAlignment \"gravityAndHeading\" needs location access (the geolocation plugin, granted) — aligned by gravity only")
             return .gravity
         }

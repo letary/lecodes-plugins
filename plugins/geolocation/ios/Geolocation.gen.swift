@@ -134,7 +134,10 @@ public enum GeolocationChannel {
 
     /// Register the service: `make` builds one session from its params. It must be cheap — no prompt,
     /// no I/O: that belongs to the first call that needs it.
-    public static func register(in engine: LeCodesEngine, _ make: @escaping (GeolocationParams, GeolocationEvents) -> GeolocationPlugin) {
+    /// location: who asks the OS for the permission the plugin brings ("location") —
+    /// the state now, and a request that completes once with the state after the dialog.
+    public static func register(in engine: LeCodesEngine, location: PermissionAsker, _ make: @escaping (GeolocationParams, GeolocationEvents) -> GeolocationPlugin) {
+        engine.permissions.register("location", location)
         engine.registerService(name, version: Int32(version)) { params, channel in
             GeolocationGlue(make(WireIn.of(params, { GeolocationParams(wire: $0) }) ?? GeolocationParams(), GeolocationEvents(channel: channel)), engine.permissions)
         }
@@ -162,7 +165,7 @@ final class GeolocationGlue: WireServiceInstance {
                 a0 = v
             }
             let reply = Reply<GeoPosition, GeolocationCode>(settle) { v, w in v.write(to: w) }
-            permissions.ensure([.location]) { [plugin] granted in
+            permissions.ensure(["location"]) { [plugin] granted in
                 guard granted else { return reply.reject(.denied) }
                 plugin.getCurrent(a0, reply)
             }
@@ -174,7 +177,7 @@ final class GeolocationGlue: WireServiceInstance {
                 a0 = v
             }
             let reply = Reply<Void, GeolocationCode>(settle)
-            permissions.ensure([.location]) { [plugin] granted in
+            permissions.ensure(["location"]) { [plugin] granted in
                 guard granted else { return reply.reject(.denied) }
                 plugin.startWatch(a0, reply)
             }

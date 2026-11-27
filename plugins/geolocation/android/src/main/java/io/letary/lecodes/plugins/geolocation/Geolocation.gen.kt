@@ -137,6 +137,7 @@ object GeolocationChannel {
     /** Register the service: `make` builds one session from its params. It must be cheap — no
      *  prompt, no I/O: that belongs to the first call that needs it. */
     fun register(engine: LecodesEngine, make: (params: GeolocationParams, events: GeolocationEvents) -> GeolocationPlugin) {
+        engine.permissions.declare("location", arrayOf("android.permission.ACCESS_FINE_LOCATION", "android.permission.ACCESS_COARSE_LOCATION"), anyOf = true)
         engine.registerService(NAME, VERSION) { params, channel ->
             val plugin = make(GeolocationParams.read(Wire.reader(params)) ?: GeolocationParams(), GeolocationEvents { event, packed -> channel.emitPacked(event, packed) })
             Services.Instance(onCall = { call -> GeolocationGlue.call(plugin, engine.permissions, call.method, call.reader(), call) }, onClose = { plugin.close() })
@@ -152,7 +153,7 @@ internal object GeolocationGlue {
             "getCurrent" -> {
                 val a0 = if (0 < n && !r.isNull()) (GeoOptions.read(r) ?: return settle.reject("bad arguments — Geolocation.getCurrent: options")) else { if (0 < n) r.skip(); null }
                 val reply = Reply<GeoPosition, GeolocationCode>(settle) { v, w -> v.write(w) }
-                permissions.ensure(listOf(Permissions.Kind.LOCATION)) { granted ->
+                permissions.ensure(listOf(Permissions.Kind.of("location"))) { granted ->
                     if (!granted) reply.reject(GeolocationCode.DENIED)
                     else plugin.getCurrent(a0, reply)
                 }
@@ -160,7 +161,7 @@ internal object GeolocationGlue {
             "startWatch" -> {
                 val a0 = if (0 < n && !r.isNull()) (GeoOptions.read(r) ?: return settle.reject("bad arguments — Geolocation.startWatch: options")) else { if (0 < n) r.skip(); null }
                 val reply = Reply<Unit, GeolocationCode>(settle, null)
-                permissions.ensure(listOf(Permissions.Kind.LOCATION)) { granted ->
+                permissions.ensure(listOf(Permissions.Kind.of("location"))) { granted ->
                     if (!granted) reply.reject(GeolocationCode.DENIED)
                     else plugin.startWatch(a0, reply)
                 }
