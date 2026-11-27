@@ -1,0 +1,21 @@
+{
+  "id": "contacts",
+  "name": "Contacts",
+  "version": "2.0.0",
+  "sdk": "^2.0.0",
+  "description": "The person's address book: the system's contact picker (no permission), reading the contacts behind the contacts permission, adding and editing through the system's own editor (Contacts / ContactsUI, ContactsContract). No write permission. On the web: the browser's Contact Picker. The app's side is Contacts.",
+  "ios": {
+    "module": "LeCodesContacts",
+    "register": "LeCodesContactsPlugin",
+    "infoPlist": {
+      "NSContactsUsageDescription": "The app reads your contacts to show them in the app."
+    }
+  },
+  "android": {
+    "module": "lecodes-contacts",
+    "register": "io.letary.lecodes.plugins.contacts.LeCodesContactsPlugin"
+  },
+  "web": {
+    "register": "web/contacts.ts"
+  }
+}

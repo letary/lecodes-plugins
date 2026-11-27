@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Merged into the consuming app by the AGP manifest merger. READ_CONTACTS only: it stands behind
+     list / get / photo / show (asked at run time, through the host's permission service). The
+     picker and the "new contact" editor are the Contacts app's own screens and need none - there is
+     no WRITE_CONTACTS here, on purpose: a contacts permission in the merged manifest is declared in
+     Play's Data safety form, which is why contacts is a plugin and not part of the SDK. -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <uses-permission android:name="android.permission.READ_CONTACTS" />
+</manifest>
