@@ -4,30 +4,27 @@
 // Three ways in, and only one of them asks a permission:
 //   - pick(): the SYSTEM's picker. The person chooses, the app gets what was chosen and nothing
 //     else — no permission, no dialog of ours. What most apps need ("invite a friend").
-//   - list() / get() / photo() / show(): READING the address book, behind the `contacts` permission
+//   - list() / get() / photo() / openCard(): READING the address book, behind the `contacts` permission
 //     (`@permission contacts`: the host asks before the first call, the halves never do).
-//   - add() / show(): WRITING is the system's — its "new contact" editor, its contact card (where a
+//   - openEditor() / openCard(): WRITING is the system's — its "new contact" editor, its contact card (where a
 //     contact is edited and deleted). The plugin writes nothing itself and declares no write
 //     permission (no WRITE_CONTACTS on Android).
 //
-// iOS 18 lets the person give an app SOME contacts: access() says "limited", list() answers with
-// those, manageAccess() shows the system's sheet that changes the choice.
+// iOS 18 lets the person give an app SOME contacts: the permission is granted all the same,
+// limited() says so, list() answers with those, manageLimitedAccess() shows the system's sheet that
+// changes the choice.
 //
 // A contact's name parts always come; everything else is asked for by `fields` (a big address book
 // is cheap to list by name) and is ABSENT from a contact when not asked. Phone numbers come as the
 // person typed them, not normalized. Notes are not part of the contract (iOS: Apple's entitlement).
 //
 // The web half is the browser's Contact Picker (Chrome on Android): pick() only — a browser has no
-// address book to read; every other call rejects `unavailable` there and access() says "denied".
+// address book to read; every other call rejects `unavailable` there.
 
 import type { Service, File, i32 } from "lecodes-sdk/plugin"
 
 /** What a contact carries beyond its name, when asked. */
 export type ContactField = "phones" | "emails" | "addresses" | "organization" | "birthday" | "urls"
-
-/** "prompt": never asked — the first list() asks. "limited": iOS 18, the person chose some contacts.
- *  "denied": refused, or the host has no address book to read (the web). */
-export type ContactsAccess = "granted" | "limited" | "denied" | "prompt"
 
 export type ContactPhotoSize = "thumbnail" | "full"
 
@@ -78,7 +75,7 @@ export interface ContactBirthday {
 
 export interface Contact {
   /** The contact's id on THIS device (iOS: the contact's identifier, Android: its lookup key) —
-   *  what get(), photo() and show() take. Not the same on another device. "" on the web: the
+   *  what get(), photo() and openCard() take. Not the same on another device. "" on the web: the
    *  browser's picker hands over no id. */
   id: string
   /** The name as the device shows it; "" for a contact without one. */
@@ -140,12 +137,14 @@ export interface ContactsEvents {
 }
 
 export interface Contacts extends Service<"contacts", ContactsParams, ContactsEvents> {
-  /** Whether the app may read the address book. Never prompts. */
-  access(): Promise<ContactsAccess>
-  /** iOS 18+, while access is "limited": the system's sheet where the person changes which contacts
+  /** iOS 18+: the person gave the app SOME contacts, not the address book — the `contacts`
+   *  permission reads "granted" all the same, and list() answers with the ones chosen. False
+   *  everywhere else (and while the permission is not granted). Never prompts. */
+  limited(): Promise<boolean>
+  /** iOS 18+, while limited() is true: the system's sheet where the person changes which contacts
    *  the app may read; resolves when it closes. Resolves at once everywhere else.
    *  @rejects busy */
-  manageAccess(): Promise<void>
+  manageLimitedAccess(): Promise<void>
 
   /** The system's picker. No permission. Resolves with what the person chose — an empty list when
    *  they chose nothing (cancelled).
@@ -177,11 +176,11 @@ export interface Contacts extends Service<"contacts", ContactsParams, ContactsEv
    *  saved the contact, false when they left without saving. No permission of the plugin's.
    *  `unavailable`: the device has no contacts app.
    *  @rejects busy unavailable failed */
-  add(draft: ContactDraft): Promise<boolean>
+  openEditor(draft: ContactDraft): Promise<boolean>
   /** The system's card of a contact: where the person sees it, edits it, deletes it. Resolves when
    *  the card closes (`changed` says whether anything was written).
    *  `notFound`: no such contact.
    *  @permission contacts
    *  @rejects busy notFound unavailable failed */
-  show(id: string): Promise<void>
+  openCard(id: string): Promise<void>
 }

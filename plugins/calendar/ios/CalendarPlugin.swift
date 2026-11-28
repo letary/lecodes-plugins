@@ -6,7 +6,7 @@
 //  upload, run or not); the manifest merges the usage strings. For the same reason it brings the
 //  `calendar` PERMISSION to the host: the manifest declares the kind, this plugin hands the host
 //  who asks for it (the generated `register` takes the asker) — the generated glue
-//  (`@permission calendar`), the SDK's `permissions` and add() on iOS 15 / 16 all go through it.
+//  (`@permission calendar`), the SDK's `permissions` and openEditor() on iOS 15 / 16 all go through it.
 //
 //  The permission is FULL access (reading). iOS 17 has a write-only grant as well: the app never
 //  asks for it (writing is the system's editor, which needs none there), and a full-access request
@@ -35,7 +35,9 @@ public enum LeCodesCalendarPlugin {
 /// The app's access to the calendars' events.
 enum CalendarAuthorization {
 
-    static var access: CalendarAccess {
+    enum Access { case granted, denied, prompt }
+
+    static var access: Access {
         let status = EKEventStore.authorizationStatus(for: .event)
         if #available(iOS 17.0, *) {
             switch status {

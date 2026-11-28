@@ -14,13 +14,6 @@ public struct CalendarParams {
     }
 }
 
-/// "prompt": never asked — the first read asks. "denied": refused, or restricted by the device.
-public enum CalendarAccess: String {
-    case granted
-    case denied
-    case prompt
-}
-
 /// One of the device's calendars ("Work", "Birthdays", a subscribed one).
 public struct CalendarInfo {
     /// The calendar's id on THIS device — what `calendars` of list() takes.
@@ -83,7 +76,7 @@ public struct CalendarListOptions {
 }
 
 public struct CalendarEvent {
-    /// The event's id on THIS device — what get() and show() take. Every occurrence of a recurring
+    /// The event's id on THIS device — what get() and openEvent() take. Every occurrence of a recurring
     /// event has the same one (Android: but for an occurrence edited on its own, see above).
     public var id: String
     public var calendarId: String
@@ -257,8 +250,6 @@ public struct CalendarEvents {
 /// What the plugin implements. A call arrives on the main thread; its reply is settled exactly
 /// once, now or later, from any thread.
 public protocol CalendarPlugin: AnyObject {
-    /// Whether the app may read the calendars. Never prompts.
-    func access(_ reply: Reply<CalendarAccess, CalendarCode>)
     /// The device's calendars.
     /// Needs the calendar permission: asked by the glue before the call, .denied when refused.
     /// Rejects with .denied / .failed.
@@ -279,14 +270,14 @@ public protocol CalendarPlugin: AnyObject {
     /// saved answers false.
     /// `unavailable`: the device has no calendar app.
     /// Rejects with .busy / .denied / .unavailable / .failed.
-    func add(_ draft: CalendarEventDraft, _ reply: Reply<Bool, CalendarCode>)
+    func openEditor(_ draft: CalendarEventDraft, _ reply: Reply<Bool, CalendarCode>)
     /// The system's card of an event: where the person sees it, edits it, deletes it. `start` names
     /// the occurrence of a recurring event (left out: its first). Resolves when the card closes
     /// (`changed` says whether anything was written).
     /// `notFound`: no such event.
     /// Needs the calendar permission: asked by the glue before the call, .denied when refused.
     /// Rejects with .denied / .busy / .notFound / .unavailable / .failed.
-    func show(_ id: String, _ start: Double?, _ reply: Reply<Void, CalendarCode>)
+    func openEvent(_ id: String, _ start: Double?, _ reply: Reply<Void, CalendarCode>)
     /// The app began (true) or stopped (false) listening to `changed`, a `@lazy` event: start or stop what
     /// produces it. Not called at the end — `close()` stops everything.
     func changedObserved(_ observed: Bool)
@@ -334,8 +325,6 @@ final class CalendarGlue: WireServiceInstance {
 
     func call(_ method: String, wire args: WireIn, _ settle: ChannelSettle) {
         switch method {
-        case "access":
-            plugin.access(Reply<CalendarAccess, CalendarCode>(settle) { v, w in w.string(v.rawValue) })
         case "calendars":
             let reply = Reply<[CalendarInfo], CalendarCode>(settle) { v, w in
                 w.beginArray(v.count)
@@ -364,21 +353,21 @@ final class CalendarGlue: WireServiceInstance {
                 guard granted else { return reply.reject(.denied) }
                 plugin.get(a0, reply)
             }
-        case "add":
-            guard let a0 = CalendarEventDraft(wire: args[0]) else { return settle.reject("bad arguments — Calendar.add: draft") }
-            plugin.add(a0, Reply<Bool, CalendarCode>(settle) { v, w in w.bool(v) })
-        case "show":
-            guard let a0 = args[0].string else { return settle.reject("bad arguments — Calendar.show: id") }
+        case "openEditor":
+            guard let a0 = CalendarEventDraft(wire: args[0]) else { return settle.reject("bad arguments — Calendar.openEditor: draft") }
+            plugin.openEditor(a0, Reply<Bool, CalendarCode>(settle) { v, w in w.bool(v) })
+        case "openEvent":
+            guard let a0 = args[0].string else { return settle.reject("bad arguments — Calendar.openEvent: id") }
             let w1 = args[1]
             var a1: Double? = nil
             if w1.isPresent {
-                guard let v = w1.f64 else { return settle.reject("bad arguments — Calendar.show: start") }
+                guard let v = w1.f64 else { return settle.reject("bad arguments — Calendar.openEvent: start") }
                 a1 = v
             }
             let reply = Reply<Void, CalendarCode>(settle)
             permissions.ensure(["calendar"]) { [plugin] granted in
                 guard granted else { return reply.reject(.denied) }
-                plugin.show(a0, a1, reply)
+                plugin.openEvent(a0, a1, reply)
             }
         case "$listen":
             // The wrapper's own call: the app began or stopped listening to a @lazy event.

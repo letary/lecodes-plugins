@@ -13,7 +13,7 @@
 //      contacts chosen, whole: no permission.
 //    - add: CNContactViewController(forNewContact:), filled from the draft. The person saves.
 //    - show: CNContactViewController(for:), where the contact is edited and deleted.
-//    - manageAccess: iOS 18's contact access picker (SwiftUI's `contactAccessPicker`), hosted in a
+//    - manageLimitedAccess: iOS 18's contact access picker (SwiftUI's `contactAccessPicker`), hosted in a
 //      clear controller.
 //
 //  A CNContact answers only for the keys it was fetched with — reading another RAISES — so every
@@ -45,11 +45,11 @@ public final class ContactsService: ContactsPlugin {
 
     // MARK: - Access
 
-    public func access(_ reply: Reply<ContactsAccess, ContactsCode>) {
-        reply.resolve(ContactsAuthorization.access)
+    public func limited(_ reply: Reply<Bool, ContactsCode>) {
+        reply.resolve(ContactsAuthorization.access == .limited)
     }
 
-    public func manageAccess(_ reply: Reply<Void, ContactsCode>) {
+    public func manageLimitedAccess(_ reply: Reply<Void, ContactsCode>) {
         onMain { [self] in
             guard #available(iOS 18.0, *), ContactsAuthorization.access == .limited else { return reply.resolve(()) }
             guard self.screen == nil else { return reply.reject(.busy) }
@@ -142,7 +142,7 @@ public final class ContactsService: ContactsPlugin {
 
     // MARK: - The system's editor and card
 
-    public func add(_ draft: ContactDraft, _ reply: Reply<Bool, ContactsCode>) {
+    public func openEditor(_ draft: ContactDraft, _ reply: Reply<Bool, ContactsCode>) {
         onMain { [self] in
             guard self.screen == nil else { return reply.reject(.busy) }
             let screen = Screen { reply.resolve(false) }
@@ -159,7 +159,7 @@ public final class ContactsService: ContactsPlugin {
         }
     }
 
-    public func show(_ id: String, _ reply: Reply<Void, ContactsCode>) {
+    public func openCard(_ id: String, _ reply: Reply<Void, ContactsCode>) {
         onMain { [self] in
             guard self.screen == nil else { return reply.reject(.busy) }
             let contact: CNContact

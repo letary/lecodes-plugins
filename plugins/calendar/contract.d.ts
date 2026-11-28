@@ -2,9 +2,9 @@
 // calendar provider (CalendarContract) and the Calendar app's own screens.
 //
 // Two ways in, and only one of them asks a permission:
-//   - calendars() / list() / get() / show(): READING, behind the `calendar` permission
+//   - calendars() / list() / get() / openEvent(): READING, behind the `calendar` permission
 //     (`@permission calendar`: the host asks before the first call, the halves never do).
-//   - add() / show(): WRITING is the system's — its "new event" editor, an event's card (where it is
+//   - openEditor() / openEvent(): WRITING is the system's — its "new event" editor, an event's card (where it is
 //     edited and deleted). The plugin writes nothing itself and declares no write permission (no
 //     WRITE_CALENDAR on Android, no write-only access on iOS).
 //
@@ -15,7 +15,7 @@
 //
 // A RECURRING event is one event with many occurrences: list() answers one entry per occurrence in
 // the range — the same `id`, each its own `start` / `end` — and `start` is what tells them apart
-// (show() takes it). On Android an occurrence the person edited or moved on its own is an event of
+// (openEvent() takes it). On Android an occurrence the person edited or moved on its own is an event of
 // its own in the provider: it comes with its own `id`.
 //
 // Reminders (the to-do lists of iOS) are not part of the contract: Android has none.
@@ -23,9 +23,6 @@
 // No web half: a browser has no calendar a page may read or write.
 
 import type { Service, f64 } from "lecodes-sdk/plugin"
-
-/** "prompt": never asked — the first read asks. "denied": refused, or restricted by the device. */
-export type CalendarAccess = "granted" | "denied" | "prompt"
 
 /** One of the device's calendars ("Work", "Birthdays", a subscribed one). */
 export interface CalendarInfo {
@@ -42,7 +39,7 @@ export interface CalendarInfo {
 }
 
 export interface CalendarEvent {
-  /** The event's id on THIS device — what get() and show() take. Every occurrence of a recurring
+  /** The event's id on THIS device — what get() and openEvent() take. Every occurrence of a recurring
    *  event has the same one (Android: but for an occurrence edited on its own, see above). */
   id: string
   calendarId: string
@@ -94,9 +91,6 @@ export interface CalendarEvents {
 }
 
 export interface Calendar extends Service<"calendar", CalendarParams, CalendarEvents> {
-  /** Whether the app may read the calendars. Never prompts. */
-  access(): Promise<CalendarAccess>
-
   /** The device's calendars.
    *  @permission calendar
    *  @rejects failed */
@@ -118,12 +112,12 @@ export interface Calendar extends Service<"calendar", CalendarParams, CalendarEv
    *  saved answers false.
    *  `unavailable`: the device has no calendar app.
    *  @rejects busy denied unavailable failed */
-  add(draft: CalendarEventDraft): Promise<boolean>
+  openEditor(draft: CalendarEventDraft): Promise<boolean>
   /** The system's card of an event: where the person sees it, edits it, deletes it. `start` names
    *  the occurrence of a recurring event (left out: its first). Resolves when the card closes
    *  (`changed` says whether anything was written).
    *  `notFound`: no such event.
    *  @permission calendar
    *  @rejects busy notFound unavailable failed */
-  show(id: string, start?: f64): Promise<void>
+  openEvent(id: string, start?: f64): Promise<void>
 }

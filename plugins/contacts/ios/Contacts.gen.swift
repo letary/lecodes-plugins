@@ -14,15 +14,6 @@ public struct ContactsParams {
     }
 }
 
-/// "prompt": never asked — the first list() asks. "limited": iOS 18, the person chose some contacts.
-/// "denied": refused, or the host has no address book to read (the web).
-public enum ContactsAccess: String {
-    case granted
-    case limited
-    case denied
-    case prompt
-}
-
 /// What a contact carries beyond its name, when asked.
 public enum ContactField: String {
     case phones
@@ -315,7 +306,7 @@ public struct ContactBirthday {
 
 public struct Contact {
     /// The contact's id on THIS device (iOS: the contact's identifier, Android: its lookup key) —
-    /// what get(), photo() and show() take. Not the same on another device. "" on the web: the
+    /// what get(), photo() and openCard() take. Not the same on another device. "" on the web: the
     /// browser's picker hands over no id.
     public var id: String
     /// The name as the device shows it; "" for a contact without one.
@@ -587,12 +578,14 @@ public struct ContactsEvents {
 /// What the plugin implements. A call arrives on the main thread; its reply is settled exactly
 /// once, now or later, from any thread.
 public protocol ContactsPlugin: AnyObject {
-    /// Whether the app may read the address book. Never prompts.
-    func access(_ reply: Reply<ContactsAccess, ContactsCode>)
-    /// iOS 18+, while access is "limited": the system's sheet where the person changes which contacts
+    /// iOS 18+: the person gave the app SOME contacts, not the address book — the `contacts`
+    /// permission reads "granted" all the same, and list() answers with the ones chosen. False
+    /// everywhere else (and while the permission is not granted). Never prompts.
+    func limited(_ reply: Reply<Bool, ContactsCode>)
+    /// iOS 18+, while limited() is true: the system's sheet where the person changes which contacts
     /// the app may read; resolves when it closes. Resolves at once everywhere else.
     /// Rejects with .busy.
-    func manageAccess(_ reply: Reply<Void, ContactsCode>)
+    func manageLimitedAccess(_ reply: Reply<Void, ContactsCode>)
     /// The system's picker. No permission. Resolves with what the person chose — an empty list when
     /// they chose nothing (cancelled).
     /// Android before 17 has a picker of ONE contact that hands over one kind of data: with several
@@ -621,13 +614,13 @@ public protocol ContactsPlugin: AnyObject {
     /// saved the contact, false when they left without saving. No permission of the plugin's.
     /// `unavailable`: the device has no contacts app.
     /// Rejects with .busy / .unavailable / .failed.
-    func add(_ draft: ContactDraft, _ reply: Reply<Bool, ContactsCode>)
+    func openEditor(_ draft: ContactDraft, _ reply: Reply<Bool, ContactsCode>)
     /// The system's card of a contact: where the person sees it, edits it, deletes it. Resolves when
     /// the card closes (`changed` says whether anything was written).
     /// `notFound`: no such contact.
     /// Needs the contacts permission: asked by the glue before the call, .denied when refused.
     /// Rejects with .denied / .busy / .notFound / .unavailable / .failed.
-    func show(_ id: String, _ reply: Reply<Void, ContactsCode>)
+    func openCard(_ id: String, _ reply: Reply<Void, ContactsCode>)
     /// The app began (true) or stopped (false) listening to `changed`, a `@lazy` event: start or stop what
     /// produces it. Not called at the end — `close()` stops everything.
     func changedObserved(_ observed: Bool)
@@ -675,10 +668,10 @@ final class ContactsGlue: WireServiceInstance {
 
     func call(_ method: String, wire args: WireIn, _ settle: ChannelSettle) {
         switch method {
-        case "access":
-            plugin.access(Reply<ContactsAccess, ContactsCode>(settle) { v, w in w.string(v.rawValue) })
-        case "manageAccess":
-            plugin.manageAccess(Reply<Void, ContactsCode>(settle))
+        case "limited":
+            plugin.limited(Reply<Bool, ContactsCode>(settle) { v, w in w.bool(v) })
+        case "manageLimitedAccess":
+            plugin.manageLimitedAccess(Reply<Void, ContactsCode>(settle))
         case "pick":
             let w0 = args[0]
             var a0: ContactPickOptions? = nil
@@ -733,15 +726,15 @@ final class ContactsGlue: WireServiceInstance {
                 guard granted else { return reply.reject(.denied) }
                 plugin.photo(a0, a1, reply)
             }
-        case "add":
-            guard let a0 = ContactDraft(wire: args[0]) else { return settle.reject("bad arguments — Contacts.add: draft") }
-            plugin.add(a0, Reply<Bool, ContactsCode>(settle) { v, w in w.bool(v) })
-        case "show":
-            guard let a0 = args[0].string else { return settle.reject("bad arguments — Contacts.show: id") }
+        case "openEditor":
+            guard let a0 = ContactDraft(wire: args[0]) else { return settle.reject("bad arguments — Contacts.openEditor: draft") }
+            plugin.openEditor(a0, Reply<Bool, ContactsCode>(settle) { v, w in w.bool(v) })
+        case "openCard":
+            guard let a0 = args[0].string else { return settle.reject("bad arguments — Contacts.openCard: id") }
             let reply = Reply<Void, ContactsCode>(settle)
             permissions.ensure(["contacts"]) { [plugin] granted in
                 guard granted else { return reply.reject(.denied) }
-                plugin.show(a0, reply)
+                plugin.openCard(a0, reply)
             }
         case "$listen":
             // The wrapper's own call: the app began or stopped listening to a @lazy event.

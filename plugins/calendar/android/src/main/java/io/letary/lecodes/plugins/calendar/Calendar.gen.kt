@@ -26,13 +26,6 @@ class CalendarParams {
     }
 }
 
-/** "prompt": never asked — the first read asks. "denied": refused, or restricted by the device. */
-enum class CalendarAccess(val wire: String) {
-    GRANTED("granted"),
-    DENIED("denied"),
-    PROMPT("prompt");
-}
-
 /** One of the device's calendars ("Work", "Birthdays", a subscribed one). */
 data class CalendarInfo(
     /** The calendar's id on THIS device — what `calendars` of list() takes. */
@@ -86,7 +79,7 @@ data class CalendarListOptions(
 
 data class CalendarEvent(
     /**
-     * The event's id on THIS device — what get() and show() take. Every occurrence of a recurring
+     * The event's id on THIS device — what get() and openEvent() take. Every occurrence of a recurring
      * event has the same one (Android: but for an occurrence edited on its own, see above).
      */
     val id: String,
@@ -198,9 +191,6 @@ class CalendarEvents(private val channel: PluginEmit) {
  * once, now or later.
  */
 interface CalendarPlugin {
-    /** Whether the app may read the calendars. Never prompts. */
-    fun access(reply: Reply<CalendarAccess, CalendarCode>)
-
     /**
      * The device's calendars.
      * Needs the calendar permission: asked by the glue before the call, DENIED when refused.
@@ -232,7 +222,7 @@ interface CalendarPlugin {
      * `unavailable`: the device has no calendar app.
      * Rejects with BUSY / DENIED / UNAVAILABLE / FAILED.
      */
-    fun add(draft: CalendarEventDraft, reply: Reply<Boolean, CalendarCode>)
+    fun openEditor(draft: CalendarEventDraft, reply: Reply<Boolean, CalendarCode>)
 
     /**
      * The system's card of an event: where the person sees it, edits it, deletes it. `start` names
@@ -242,7 +232,7 @@ interface CalendarPlugin {
      * Needs the calendar permission: asked by the glue before the call, DENIED when refused.
      * Rejects with DENIED / BUSY / NOT_FOUND / UNAVAILABLE / FAILED.
      */
-    fun show(id: String, start: Double?, reply: Reply<Unit, CalendarCode>)
+    fun openEvent(id: String, start: Double?, reply: Reply<Unit, CalendarCode>)
 
     /**
      * The app began (true) or stopped (false) listening to `changed`, a `@lazy` event: start or stop what
@@ -278,9 +268,6 @@ internal object CalendarGlue {
     fun call(plugin: CalendarPlugin, events: CalendarEvents, permissions: Permissions, method: String, r: PackedReader, settle: ChannelSettle) {
         val n = r.beginArray()   // the arguments, in their order
         when (method) {
-            "access" -> {
-                plugin.access(Reply<CalendarAccess, CalendarCode>(settle) { v, w -> w.string(v.wire) })
-            }
             "calendars" -> {
                 val reply = Reply<List<CalendarInfo>, CalendarCode>(settle) { v, w ->
                     w.beginArray()
@@ -312,17 +299,17 @@ internal object CalendarGlue {
                     else plugin.get(a0, reply)
                 }
             }
-            "add" -> {
-                val a0 = (if (0 < n) CalendarEventDraft.read(r) else null) ?: return settle.reject("bad arguments — Calendar.add: draft")
-                plugin.add(a0, Reply<Boolean, CalendarCode>(settle) { v, w -> w.bool(v) })
+            "openEditor" -> {
+                val a0 = (if (0 < n) CalendarEventDraft.read(r) else null) ?: return settle.reject("bad arguments — Calendar.openEditor: draft")
+                plugin.openEditor(a0, Reply<Boolean, CalendarCode>(settle) { v, w -> w.bool(v) })
             }
-            "show" -> {
-                val a0 = (if (0 < n) r.string() else null) ?: return settle.reject("bad arguments — Calendar.show: id")
-                val a1 = if (1 < n && !r.isNull()) (r.f64() ?: return settle.reject("bad arguments — Calendar.show: start")) else { if (1 < n) r.skip(); null }
+            "openEvent" -> {
+                val a0 = (if (0 < n) r.string() else null) ?: return settle.reject("bad arguments — Calendar.openEvent: id")
+                val a1 = if (1 < n && !r.isNull()) (r.f64() ?: return settle.reject("bad arguments — Calendar.openEvent: start")) else { if (1 < n) r.skip(); null }
                 val reply = Reply<Unit, CalendarCode>(settle, null)
                 permissions.ensure(listOf(Permissions.Kind.of("calendar"))) { granted ->
                     if (!granted) reply.reject(CalendarCode.DENIED)
-                    else plugin.show(a0, a1, reply)
+                    else plugin.openEvent(a0, a1, reply)
                 }
             }
             "\$listen" -> {

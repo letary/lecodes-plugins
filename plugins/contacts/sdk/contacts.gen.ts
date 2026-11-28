@@ -2,7 +2,7 @@
 // contacts: the service "contacts", contract version 1.
 
 import { ServiceChannel, _toFile, type File } from "lecodes-sdk/plugin"
-import type { Contact, ContactDraft, ContactField, ContactListOptions, ContactPhotoSize, ContactPickOptions, ContactsAccess, ContactsEvents, ContactsParams } from "../contract"
+import type { Contact, ContactDraft, ContactField, ContactListOptions, ContactPhotoSize, ContactPickOptions, ContactsEvents, ContactsParams } from "../contract"
 
 /** What the halves register under. */
 export const NAME = "contacts"
@@ -11,15 +11,17 @@ export const VERSION = 1
 
 // ---- the wire, call by call ----------------------------------------------------------------------
 
-/** Whether the app may read the address book. Never prompts. */
-export const access = (service: ServiceChannel<ContactsEvents>): Promise<ContactsAccess> =>
-  service._call("access", [])
+/** iOS 18+: the person gave the app SOME contacts, not the address book — the `contacts`
+ *  permission reads "granted" all the same, and list() answers with the ones chosen. False
+ *  everywhere else (and while the permission is not granted). Never prompts. */
+export const limited = (service: ServiceChannel<ContactsEvents>): Promise<boolean> =>
+  service._call("limited", [])
 
-/** iOS 18+, while access is "limited": the system's sheet where the person changes which contacts
+/** iOS 18+, while limited() is true: the system's sheet where the person changes which contacts
  *  the app may read; resolves when it closes. Resolves at once everywhere else.
  *  Rejects with "busy". */
-export const manageAccess = (service: ServiceChannel<ContactsEvents>): Promise<void> =>
-  service._call("manageAccess", [])
+export const manageLimitedAccess = (service: ServiceChannel<ContactsEvents>): Promise<void> =>
+  service._call("manageLimitedAccess", [])
 
 /** The system's picker. No permission. Resolves with what the person chose — an empty list when
  *  they chose nothing (cancelled).
@@ -57,21 +59,21 @@ export const photo = (service: ServiceChannel<ContactsEvents>, id: string, size?
  *  saved the contact, false when they left without saving. No permission of the plugin's.
  *  `unavailable`: the device has no contacts app.
  *  Rejects with "busy" / "unavailable" / "failed". */
-export const add = (service: ServiceChannel<ContactsEvents>, draft: ContactDraft): Promise<boolean> =>
-  service._call("add", [draft])
+export const openEditor = (service: ServiceChannel<ContactsEvents>, draft: ContactDraft): Promise<boolean> =>
+  service._call("openEditor", [draft])
 
 /** The system's card of a contact: where the person sees it, edits it, deletes it. Resolves when
  *  the card closes (`changed` says whether anything was written).
  *  `notFound`: no such contact.
  *  Needs the "contacts" permission: the host asks before the call, "denied" when refused.
  *  Rejects with "denied" / "busy" / "notFound" / "unavailable" / "failed". */
-export const show = (service: ServiceChannel<ContactsEvents>, id: string): Promise<void> =>
-  service._call("show", [id])
+export const openCard = (service: ServiceChannel<ContactsEvents>, id: string): Promise<void> =>
+  service._call("openCard", [id])
 
 // ---- what the host's half has --------------------------------------------------------------------
 
 /** A method of the contract. */
-export type Method = "access" | "manageAccess" | "pick" | "list" | "get" | "photo" | "add" | "show"
+export type Method = "limited" | "manageLimitedAccess" | "pick" | "list" | "get" | "photo" | "openEditor" | "openCard"
 
 /** Whether this host has the service "contacts" — and, given a method, a half new enough for it
  *  (a method added after the first version of the contract is tagged `@since`). */
@@ -84,12 +86,14 @@ export const supports = (method?: Method): boolean =>
 export class ContactsBase extends ServiceChannel<ContactsEvents> {
   constructor(params: ContactsParams = {}) { super("Contacts", NAME, params, undefined, ["changed"]) }
 
-  /** Whether the app may read the address book. Never prompts. */
-  access(): Promise<ContactsAccess> { return access(this) }
-  /** iOS 18+, while access is "limited": the system's sheet where the person changes which contacts
+  /** iOS 18+: the person gave the app SOME contacts, not the address book — the `contacts`
+   *  permission reads "granted" all the same, and list() answers with the ones chosen. False
+   *  everywhere else (and while the permission is not granted). Never prompts. */
+  limited(): Promise<boolean> { return limited(this) }
+  /** iOS 18+, while limited() is true: the system's sheet where the person changes which contacts
    *  the app may read; resolves when it closes. Resolves at once everywhere else.
    *  Rejects with "busy". */
-  manageAccess(): Promise<void> { return manageAccess(this) }
+  manageLimitedAccess(): Promise<void> { return manageLimitedAccess(this) }
   /** The system's picker. No permission. Resolves with what the person chose — an empty list when
    *  they chose nothing (cancelled).
    *  Android before 17 has a picker of ONE contact that hands over one kind of data: with several
@@ -118,11 +122,11 @@ export class ContactsBase extends ServiceChannel<ContactsEvents> {
    *  saved the contact, false when they left without saving. No permission of the plugin's.
    *  `unavailable`: the device has no contacts app.
    *  Rejects with "busy" / "unavailable" / "failed". */
-  add(draft: ContactDraft): Promise<boolean> { return add(this, draft) }
+  openEditor(draft: ContactDraft): Promise<boolean> { return openEditor(this, draft) }
   /** The system's card of a contact: where the person sees it, edits it, deletes it. Resolves when
    *  the card closes (`changed` says whether anything was written).
    *  `notFound`: no such contact.
    *  Needs the "contacts" permission: the host asks before the call, "denied" when refused.
    *  Rejects with "denied" / "busy" / "notFound" / "unavailable" / "failed". */
-  show(id: string): Promise<void> { return show(this, id) }
+  openCard(id: string): Promise<void> { return openCard(this, id) }
 }

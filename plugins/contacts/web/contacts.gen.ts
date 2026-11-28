@@ -79,10 +79,6 @@ const wire = {
 export interface ContactsParams {}
 const readContactsParams = (v: unknown): ContactsParams | undefined => !wire.present(v) || wire.object(v) ? {} : undefined
 
-/** "prompt": never asked — the first list() asks. "limited": iOS 18, the person chose some contacts.
- *  "denied": refused, or the host has no address book to read (the web). */
-export type ContactsAccess = "granted" | "limited" | "denied" | "prompt"
-
 /** What a contact carries beyond its name, when asked. */
 export type ContactField = "phones" | "emails" | "addresses" | "organization" | "birthday" | "urls"
 const readContactField = (v: unknown): ContactField | undefined =>
@@ -292,7 +288,7 @@ const readContactBirthday = (v: unknown): ContactBirthday | undefined => {
 
 export interface Contact {
   /** The contact's id on THIS device (iOS: the contact's identifier, Android: its lookup key) —
-   *  what get(), photo() and show() take. Not the same on another device. "" on the web: the
+   *  what get(), photo() and openCard() take. Not the same on another device. "" on the web: the
    *  browser's picker hands over no id. */
   id: string
   /** The name as the device shows it; "" for a contact without one. */
@@ -459,12 +455,14 @@ export interface ContactsEvents {
  *
  *  What the half implements. A call returns its result, or a promise of it; it rejects by throwing. */
 export interface ContactsPlugin {
-  /** Whether the app may read the address book. Never prompts. */
-  access(): ContactsAccess | Promise<ContactsAccess>
-  /** iOS 18+, while access is "limited": the system's sheet where the person changes which contacts
+  /** iOS 18+: the person gave the app SOME contacts, not the address book — the `contacts`
+   *  permission reads "granted" all the same, and list() answers with the ones chosen. False
+   *  everywhere else (and while the permission is not granted). Never prompts. */
+  limited(): boolean | Promise<boolean>
+  /** iOS 18+, while limited() is true: the system's sheet where the person changes which contacts
    *  the app may read; resolves when it closes. Resolves at once everywhere else.
    *  Rejects with "busy". */
-  manageAccess(): void | Promise<void>
+  manageLimitedAccess(): void | Promise<void>
   /** The system's picker. No permission. Resolves with what the person chose — an empty list when
    *  they chose nothing (cancelled).
    *  Android before 17 has a picker of ONE contact that hands over one kind of data: with several
@@ -490,12 +488,12 @@ export interface ContactsPlugin {
    *  saved the contact, false when they left without saving. No permission of the plugin's.
    *  `unavailable`: the device has no contacts app.
    *  Rejects with "busy" / "unavailable" / "failed". */
-  add(draft: ContactDraft): boolean | Promise<boolean>
+  openEditor(draft: ContactDraft): boolean | Promise<boolean>
   /** The system's card of a contact: where the person sees it, edits it, deletes it. Resolves when
    *  the card closes (`changed` says whether anything was written).
    *  `notFound`: no such contact.
    *  Rejects with "denied" / "busy" / "notFound" / "unavailable" / "failed". */
-  show(id: string): void | Promise<void>
+  openCard(id: string): void | Promise<void>
   /** The app began (true) or stopped (false) listening to `changed`, a `@lazy` event: start or stop what
    *  produces it. Not called at the end — `close()` stops everything. */
   changedObserved(observed: boolean): void
@@ -522,11 +520,11 @@ export const registerContacts = (host: PluginHost, make: (params: ContactsParams
     const plugin = make(readContactsParams(params) ?? {}, events)
     const call = async (method: string, args: unknown[]): Promise<unknown> => {
       switch (method) {
-        case "access": {
-          return await plugin.access()
+        case "limited": {
+          return await plugin.limited()
         }
-        case "manageAccess": {
-          await plugin.manageAccess()
+        case "manageLimitedAccess": {
+          await plugin.manageLimitedAccess()
           return undefined
         }
         case "pick": {
@@ -570,15 +568,15 @@ export const registerContacts = (host: PluginHost, make: (params: ContactsParams
           const r = await plugin.photo(a0, a1)
           return (r == null ? null : writeFile(host, r))
         }
-        case "add": {
+        case "openEditor": {
           const a0 = readContactDraft(args[0])
-          if (a0 === undefined) throw new Error("bad arguments — Contacts.add: draft")
-          return await plugin.add(a0)
+          if (a0 === undefined) throw new Error("bad arguments — Contacts.openEditor: draft")
+          return await plugin.openEditor(a0)
         }
-        case "show": {
+        case "openCard": {
           const a0 = wire.string(args[0])
-          if (a0 === undefined) throw new Error("bad arguments — Contacts.show: id")
-          await plugin.show(a0)
+          if (a0 === undefined) throw new Error("bad arguments — Contacts.openCard: id")
+          await plugin.openCard(a0)
           return undefined
         }
         case "$listen": {

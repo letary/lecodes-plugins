@@ -1,6 +1,6 @@
 // contacts on the web: the browser's Contact Picker (navigator.contacts.select — Chrome on Android).
-// pick() only: a browser has no address book a page may read, no editor, no card — access() says
-// "denied" and the other calls reject "unavailable". Where the browser has no picker the half does
+// pick() only: a browser has no address book a page may read, no editor, no card — limited() says false
+// and the other calls reject "unavailable". Where the browser has no picker the half does
 // not register at all, and `Contacts.supported` is false.
 //
 // The picker hands over values without their labels and without an id: a picked contact's id is "",
@@ -49,8 +49,8 @@ export const register = (host: PluginHost): void => {
     const unavailable = (): never => { throw new ContactsError("unavailable") }
 
     return {
-      access: () => "denied",
-      manageAccess: () => {},
+      limited: () => false,
+      manageLimitedAccess: () => {},
 
       async pick(options?: ContactPickOptions): Promise<Contact[]> {
         if (picking) throw new ContactsError("busy")
@@ -90,8 +90,8 @@ export const register = (host: PluginHost): void => {
       list: unavailable,
       get: unavailable,
       photo: unavailable,
-      add: unavailable,
-      show: unavailable,
+      openEditor: unavailable,
+      openCard: unavailable,
       changedObserved: () => {},
     }
   })

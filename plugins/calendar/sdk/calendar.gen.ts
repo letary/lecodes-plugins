@@ -2,7 +2,7 @@
 // calendar: the service "calendar", contract version 1.
 
 import { ServiceChannel } from "lecodes-sdk/plugin"
-import type { CalendarAccess, CalendarEvent, CalendarEventDraft, CalendarEvents, CalendarInfo, CalendarListOptions, CalendarParams } from "../contract"
+import type { CalendarEvent, CalendarEventDraft, CalendarEvents, CalendarInfo, CalendarListOptions, CalendarParams } from "../contract"
 
 /** What the halves register under. */
 export const NAME = "calendar"
@@ -10,10 +10,6 @@ export const NAME = "calendar"
 export const VERSION = 1
 
 // ---- the wire, call by call ----------------------------------------------------------------------
-
-/** Whether the app may read the calendars. Never prompts. */
-export const access = (service: ServiceChannel<CalendarEvents>): Promise<CalendarAccess> =>
-  service._call("access", [])
 
 /** The device's calendars.
  *  Needs the "calendar" permission: the host asks before the call, "denied" when refused.
@@ -41,8 +37,8 @@ export const get = (service: ServiceChannel<CalendarEvents>, id: string): Promis
  *  saved answers false.
  *  `unavailable`: the device has no calendar app.
  *  Rejects with "busy" / "denied" / "unavailable" / "failed". */
-export const add = (service: ServiceChannel<CalendarEvents>, draft: CalendarEventDraft): Promise<boolean> =>
-  service._call("add", [draft])
+export const openEditor = (service: ServiceChannel<CalendarEvents>, draft: CalendarEventDraft): Promise<boolean> =>
+  service._call("openEditor", [draft])
 
 /** The system's card of an event: where the person sees it, edits it, deletes it. `start` names
  *  the occurrence of a recurring event (left out: its first). Resolves when the card closes
@@ -50,13 +46,13 @@ export const add = (service: ServiceChannel<CalendarEvents>, draft: CalendarEven
  *  `notFound`: no such event.
  *  Needs the "calendar" permission: the host asks before the call, "denied" when refused.
  *  Rejects with "denied" / "busy" / "notFound" / "unavailable" / "failed". */
-export const show = (service: ServiceChannel<CalendarEvents>, id: string, start?: number): Promise<void> =>
-  service._call("show", [id, start])
+export const openEvent = (service: ServiceChannel<CalendarEvents>, id: string, start?: number): Promise<void> =>
+  service._call("openEvent", [id, start])
 
 // ---- what the host's half has --------------------------------------------------------------------
 
 /** A method of the contract. */
-export type Method = "access" | "calendars" | "list" | "get" | "add" | "show"
+export type Method = "calendars" | "list" | "get" | "openEditor" | "openEvent"
 
 /** Whether this host has the service "calendar" — and, given a method, a half new enough for it
  *  (a method added after the first version of the contract is tagged `@since`). */
@@ -69,8 +65,6 @@ export const supports = (method?: Method): boolean =>
 export class CalendarBase extends ServiceChannel<CalendarEvents> {
   constructor(params: CalendarParams = {}) { super("Calendar", NAME, params, undefined, ["changed"]) }
 
-  /** Whether the app may read the calendars. Never prompts. */
-  access(): Promise<CalendarAccess> { return access(this) }
   /** The device's calendars.
    *  Needs the "calendar" permission: the host asks before the call, "denied" when refused.
    *  Rejects with "denied" / "failed". */
@@ -91,12 +85,12 @@ export class CalendarBase extends ServiceChannel<CalendarEvents> {
    *  saved answers false.
    *  `unavailable`: the device has no calendar app.
    *  Rejects with "busy" / "denied" / "unavailable" / "failed". */
-  add(draft: CalendarEventDraft): Promise<boolean> { return add(this, draft) }
+  openEditor(draft: CalendarEventDraft): Promise<boolean> { return openEditor(this, draft) }
   /** The system's card of an event: where the person sees it, edits it, deletes it. `start` names
    *  the occurrence of a recurring event (left out: its first). Resolves when the card closes
    *  (`changed` says whether anything was written).
    *  `notFound`: no such event.
    *  Needs the "calendar" permission: the host asks before the call, "denied" when refused.
    *  Rejects with "denied" / "busy" / "notFound" / "unavailable" / "failed". */
-  show(id: string, start?: number): Promise<void> { return show(this, id, start) }
+  openEvent(id: string, start?: number): Promise<void> { return openEvent(this, id, start) }
 }

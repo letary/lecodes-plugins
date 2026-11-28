@@ -27,17 +27,6 @@ class ContactsParams {
     }
 }
 
-/**
- * "prompt": never asked — the first list() asks. "limited": iOS 18, the person chose some contacts.
- * "denied": refused, or the host has no address book to read (the web).
- */
-enum class ContactsAccess(val wire: String) {
-    GRANTED("granted"),
-    LIMITED("limited"),
-    DENIED("denied"),
-    PROMPT("prompt");
-}
-
 /** What a contact carries beyond its name, when asked. */
 enum class ContactField(val wire: String) {
     PHONES("phones"),
@@ -283,7 +272,7 @@ data class ContactBirthday(
 data class Contact(
     /**
      * The contact's id on THIS device (iOS: the contact's identifier, Android: its lookup key) —
-     * what get(), photo() and show() take. Not the same on another device. "" on the web: the
+     * what get(), photo() and openCard() take. Not the same on another device. "" on the web: the
      * browser's picker hands over no id.
      */
     val id: String,
@@ -467,15 +456,19 @@ class ContactsEvents(private val channel: PluginEmit) {
  * once, now or later.
  */
 interface ContactsPlugin {
-    /** Whether the app may read the address book. Never prompts. */
-    fun access(reply: Reply<ContactsAccess, ContactsCode>)
+    /**
+     * iOS 18+: the person gave the app SOME contacts, not the address book — the `contacts`
+     * permission reads "granted" all the same, and list() answers with the ones chosen. False
+     * everywhere else (and while the permission is not granted). Never prompts.
+     */
+    fun limited(reply: Reply<Boolean, ContactsCode>)
 
     /**
-     * iOS 18+, while access is "limited": the system's sheet where the person changes which contacts
+     * iOS 18+, while limited() is true: the system's sheet where the person changes which contacts
      * the app may read; resolves when it closes. Resolves at once everywhere else.
      * Rejects with BUSY.
      */
-    fun manageAccess(reply: Reply<Unit, ContactsCode>)
+    fun manageLimitedAccess(reply: Reply<Unit, ContactsCode>)
 
     /**
      * The system's picker. No permission. Resolves with what the person chose — an empty list when
@@ -519,7 +512,7 @@ interface ContactsPlugin {
      * `unavailable`: the device has no contacts app.
      * Rejects with BUSY / UNAVAILABLE / FAILED.
      */
-    fun add(draft: ContactDraft, reply: Reply<Boolean, ContactsCode>)
+    fun openEditor(draft: ContactDraft, reply: Reply<Boolean, ContactsCode>)
 
     /**
      * The system's card of a contact: where the person sees it, edits it, deletes it. Resolves when
@@ -528,7 +521,7 @@ interface ContactsPlugin {
      * Needs the contacts permission: asked by the glue before the call, DENIED when refused.
      * Rejects with DENIED / BUSY / NOT_FOUND / UNAVAILABLE / FAILED.
      */
-    fun show(id: String, reply: Reply<Unit, ContactsCode>)
+    fun openCard(id: String, reply: Reply<Unit, ContactsCode>)
 
     /**
      * The app began (true) or stopped (false) listening to `changed`, a `@lazy` event: start or stop what
@@ -564,11 +557,11 @@ internal object ContactsGlue {
     fun call(plugin: ContactsPlugin, events: ContactsEvents, permissions: Permissions, method: String, r: PackedReader, settle: ChannelSettle) {
         val n = r.beginArray()   // the arguments, in their order
         when (method) {
-            "access" -> {
-                plugin.access(Reply<ContactsAccess, ContactsCode>(settle) { v, w -> w.string(v.wire) })
+            "limited" -> {
+                plugin.limited(Reply<Boolean, ContactsCode>(settle) { v, w -> w.bool(v) })
             }
-            "manageAccess" -> {
-                plugin.manageAccess(Reply<Unit, ContactsCode>(settle, null))
+            "manageLimitedAccess" -> {
+                plugin.manageLimitedAccess(Reply<Unit, ContactsCode>(settle, null))
             }
             "pick" -> {
                 val a0 = if (0 < n && !r.isNull()) (ContactPickOptions.read(r) ?: return settle.reject("bad arguments — Contacts.pick: options")) else { if (0 < n) r.skip(); null }
@@ -608,16 +601,16 @@ internal object ContactsGlue {
                     else plugin.photo(a0, a1, reply)
                 }
             }
-            "add" -> {
-                val a0 = (if (0 < n) ContactDraft.read(r) else null) ?: return settle.reject("bad arguments — Contacts.add: draft")
-                plugin.add(a0, Reply<Boolean, ContactsCode>(settle) { v, w -> w.bool(v) })
+            "openEditor" -> {
+                val a0 = (if (0 < n) ContactDraft.read(r) else null) ?: return settle.reject("bad arguments — Contacts.openEditor: draft")
+                plugin.openEditor(a0, Reply<Boolean, ContactsCode>(settle) { v, w -> w.bool(v) })
             }
-            "show" -> {
-                val a0 = (if (0 < n) r.string() else null) ?: return settle.reject("bad arguments — Contacts.show: id")
+            "openCard" -> {
+                val a0 = (if (0 < n) r.string() else null) ?: return settle.reject("bad arguments — Contacts.openCard: id")
                 val reply = Reply<Unit, ContactsCode>(settle, null)
                 permissions.ensure(listOf(Permissions.Kind.of("contacts"))) { granted ->
                     if (!granted) reply.reject(ContactsCode.DENIED)
-                    else plugin.show(a0, reply)
+                    else plugin.openCard(a0, reply)
                 }
             }
             "\$listen" -> {

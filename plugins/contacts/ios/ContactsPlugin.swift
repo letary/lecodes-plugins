@@ -36,7 +36,9 @@ public enum LeCodesContactsPlugin {
 /// choice — a grant for the host's permission service (the calls go through), "limited" for the app.
 enum ContactsAuthorization {
 
-    static var access: ContactsAccess {
+    enum Access { case granted, limited, denied, prompt }
+
+    static var access: Access {
         let status = CNContactStore.authorizationStatus(for: .contacts)
         if #available(iOS 18.0, *), status == .limited { return .limited }
         switch status {

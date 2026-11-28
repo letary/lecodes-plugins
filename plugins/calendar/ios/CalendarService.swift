@@ -35,7 +35,7 @@ import UIKit
 public final class CalendarService: CalendarPlugin {
 
     private let events: CalendarEvents
-    /// The host's permission service: add() asks through it on iOS 15 / 16.
+    /// The host's permission service: openEditor() asks through it on iOS 15 / 16.
     private let permissions: Permissions
     private let queue = DispatchQueue(label: "io.letary.lecodes.calendar")
 
@@ -63,12 +63,6 @@ public final class CalendarService: CalendarPlugin {
         let store = EKEventStore()
         made = (store, granted)
         return store
-    }
-
-    // MARK: - Access
-
-    public func access(_ reply: Reply<CalendarAccess, CalendarCode>) {
-        reply.resolve(CalendarAuthorization.access)
     }
 
     // MARK: - Reading
@@ -111,7 +105,7 @@ public final class CalendarService: CalendarPlugin {
 
     // MARK: - The system's editor and card
 
-    public func add(_ draft: CalendarEventDraft, _ reply: Reply<Bool, CalendarCode>) {
+    public func openEditor(_ draft: CalendarEventDraft, _ reply: Reply<Bool, CalendarCode>) {
         onMain { [self] in
             guard self.screen == nil else { return reply.reject(.busy) }
             if #available(iOS 17.0, *) { return self.edit(draft, reply) }
@@ -146,7 +140,7 @@ public final class CalendarService: CalendarPlugin {
         if !present(editor, as: screen) { reply.reject(.failed) }
     }
 
-    public func show(_ id: String, _ start: Double?, _ reply: Reply<Void, CalendarCode>) {
+    public func openEvent(_ id: String, _ start: Double?, _ reply: Reply<Void, CalendarCode>) {
         onMain { [self] in
             guard self.screen == nil else { return reply.reject(.busy) }
             guard let event = self.occurrence(id, start) else { return reply.reject(.notFound) }

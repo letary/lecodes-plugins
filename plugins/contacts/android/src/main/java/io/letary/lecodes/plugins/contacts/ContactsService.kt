@@ -49,7 +49,6 @@ import android.util.Log
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.fragment.app.Fragment
 import io.letary.lecodes.LecodesEngine
-import io.letary.lecodes.services.Permissions
 import io.letary.lecodes.services.PluginFile
 import io.letary.lecodes.services.Reply
 import io.letary.lecodes.services.resolve
@@ -78,16 +77,11 @@ class ContactsService(
 
     // ── access ───────────────────────────────────────────────────────────────
 
-    override fun access(reply: Reply<ContactsAccess, ContactsCode>) {
-        reply.resolve(when (engine.permissions.query(Permissions.Kind.of("contacts"))) {
-            Permissions.State.GRANTED -> ContactsAccess.GRANTED
-            Permissions.State.DENIED -> ContactsAccess.DENIED
-            Permissions.State.PROMPT -> ContactsAccess.PROMPT
-        })
-    }
+    /** Android gives an app the whole address book or none of it: never a selection. */
+    override fun limited(reply: Reply<Boolean, ContactsCode>) = reply.resolve(false)
 
     /** Android gives an app the whole address book or none of it: nothing to manage. */
-    override fun manageAccess(reply: Reply<Unit, ContactsCode>) = reply.resolve()
+    override fun manageLimitedAccess(reply: Reply<Unit, ContactsCode>) = reply.resolve()
 
     // ── reading ──────────────────────────────────────────────────────────────
 
@@ -169,7 +163,7 @@ class ContactsService(
 
     // ── the system's editor and card ─────────────────────────────────────────
 
-    override fun add(draft: ContactDraft, reply: Reply<Boolean, ContactsCode>) {
+    override fun openEditor(draft: ContactDraft, reply: Reply<Boolean, ContactsCode>) {
         val intent = Intent(Intent.ACTION_INSERT, Contacts.CONTENT_URI)
             // Come back when the contact is saved, with RESULT_OK (the AOSP editor's own extra).
             .putExtra("finishActivityOnSaveCompleted", true)
@@ -231,7 +225,7 @@ class ContactsService(
         if (type != null) put(typeColumn, type) else { put(typeColumn, custom); put(labelColumn, text) }
     }
 
-    override fun show(id: String, reply: Reply<Unit, ContactsCode>) {
+    override fun openCard(id: String, reply: Reply<Unit, ContactsCode>) {
         if (closed) return reply.reject(ContactsCode.FAILED)
         if (screen != null) return reply.reject(ContactsCode.BUSY)
         io.execute {

@@ -37,7 +37,6 @@ import android.util.Log
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.fragment.app.Fragment
 import io.letary.lecodes.LecodesEngine
-import io.letary.lecodes.services.Permissions
 import io.letary.lecodes.services.Reply
 import io.letary.lecodes.services.resolve
 import java.util.concurrent.ExecutorService
@@ -62,16 +61,6 @@ class CalendarService(
 
     private val mayRead: Boolean
         get() = appContext.checkSelfPermission(Manifest.permission.READ_CALENDAR) == PackageManager.PERMISSION_GRANTED
-
-    // ── access ───────────────────────────────────────────────────────────────
-
-    override fun access(reply: Reply<CalendarAccess, CalendarCode>) {
-        reply.resolve(when (engine.permissions.query(Permissions.Kind.of("calendar"))) {
-            Permissions.State.GRANTED -> CalendarAccess.GRANTED
-            Permissions.State.DENIED -> CalendarAccess.DENIED
-            Permissions.State.PROMPT -> CalendarAccess.PROMPT
-        })
-    }
 
     // ── reading ──────────────────────────────────────────────────────────────
 
@@ -109,7 +98,7 @@ class CalendarService(
 
     // ── the system's editor and card ─────────────────────────────────────────
 
-    override fun add(draft: CalendarEventDraft, reply: Reply<Boolean, CalendarCode>) {
+    override fun openEditor(draft: CalendarEventDraft, reply: Reply<Boolean, CalendarCode>) {
         if (closed) return reply.reject(CalendarCode.FAILED)
         if (screen != null) return reply.reject(CalendarCode.BUSY)
         val intent = Intent(Intent.ACTION_INSERT, Events.CONTENT_URI)
@@ -164,7 +153,7 @@ class CalendarService(
         }
     }
 
-    override fun show(id: String, start: Double?, reply: Reply<Unit, CalendarCode>) {
+    override fun openEvent(id: String, start: Double?, reply: Reply<Unit, CalendarCode>) {
         if (closed) return reply.reject(CalendarCode.FAILED)
         if (screen != null) return reply.reject(CalendarCode.BUSY)
         io.execute {
